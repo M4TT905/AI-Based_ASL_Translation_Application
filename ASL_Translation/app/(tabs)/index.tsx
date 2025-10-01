@@ -1,98 +1,102 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { StyleSheet, Text, View, Button, TouchableOpacity } from 'react-native';
+import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
+import { useState } from 'react';
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const [facing, setFacing] = useState<CameraType>('front');
+  const [permission, requestPermission] = useCameraPermissions();
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+
+  if(!permission) {
+    return (
+      <View>
+        <Text>Could not get permission</Text>
+      </View>
+    );
+  }
+
+  if(!permission.granted) {
+    return(
+      <View style={permissionButtonStyle.container}>
+        <Button title='grant permission'/>
+      </View>
+    );
+  }
+
+  function toggleCameraFacing() {
+    setFacing(current => (current === 'back' ? 'front' : 'back'));
+  }
+
+  return (
+    <View style={mainStyle.container}>
+      <TouchableOpacity style={buttonStyle.container}>
+        <Text style={buttonStyle.text}>Options</Text>
+      </TouchableOpacity>
+      <View style={cameraStyle.container}>
+        <CameraView facing='front' />
+      </View>
+      <View style={overlayStyle.container}>
+        <Text style={overlayStyle.text}>
+          Here is the translation
+        </Text>
+      </View>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+const mainStyle = StyleSheet.create({
+  container:{
+    flex: 1,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+});
+
+const permissionButtonStyle = StyleSheet.create({
+  container:{
+    backgroundColor: 'white',
+    opacity: 0.80,
+    padding: 20,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
+  text:{
+    color: 'blue',
+  },
+});
+
+const buttonStyle = StyleSheet.create({
+  container:{
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 5,
+    backgroundColor: '#FFF',
     position: 'absolute',
+    zIndex: 1,
+    left: '5%',
+    top: '5%',
+    opacity: 0.5,
+  },
+  text:{
+    color: 'blue',
+  },
+});
+
+const cameraStyle = StyleSheet.create({
+  container:{
+    height: '100%',
+    backgroundColor: '#FFAAFF',
+    opacity: 1,
+  },
+});
+
+const overlayStyle = StyleSheet.create({
+  container:{
+    position: 'absolute',
+    top: '80%',
+    padding: 10,
+    width: '100%',
+    height: '20%',
+    backgroundColor: '#rgba(170, 255, 170, 0.50)',
+  },
+  text:{
+    opacity: 1,
+    color: 'black',
   },
 });
