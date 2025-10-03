@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "We need access to your camera to take photos."
+        "NSCameraUsageDescription": "This app needs access to your camera to translate ASL gestures in real-time."
       }
     },
     "android": {
@@ -46,8 +46,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera",
-          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone"
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera to translate ASL gestures.",
+          "microphonePermission": false
         }
       ]
     ],
