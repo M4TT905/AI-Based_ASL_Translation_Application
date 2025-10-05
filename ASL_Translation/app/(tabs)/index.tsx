@@ -1,14 +1,16 @@
+import { StyleSheet, View, Alert } from "react-native";
 import {
-  StyleSheet,
   Text,
-  View,
   Button,
-  TouchableOpacity,
-  Alert,
-} from "react-native";
+  Surface,
+  IconButton,
+  useTheme,
+  ActivityIndicator,
+} from "react-native-paper";
 import { CameraView, CameraType, useCameraPermissions } from "expo-camera";
 import { useState, useEffect, useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { spacing, borderRadius, elevation } from "@/constants/paperTheme";
 
 export default function HomeScreen() {
   const [facing, setFacing] = useState<CameraType>("back");
@@ -17,6 +19,7 @@ export default function HomeScreen() {
   const [debugInfo, setDebugInfo] = useState("Initializing...");
   const cameraRef = useRef<CameraView>(null);
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
 
   useEffect(() => {
     console.log("Camera permission status:", permission);
@@ -32,19 +35,42 @@ export default function HomeScreen() {
 
   if (!permission) {
     return (
-      <View style={permissionButtonStyle.container}>
-        <Text>Loading camera permissions...</Text>
-      </View>
+      <Surface
+        style={[
+          permissionButtonStyle.container,
+          { backgroundColor: theme.colors.background },
+        ]}
+      >
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text
+          variant="bodyLarge"
+          style={{ marginTop: spacing.md, color: theme.colors.onBackground }}
+        >
+          Loading camera permissions...
+        </Text>
+      </Surface>
     );
   }
 
   if (!permission.granted) {
     return (
-      <View style={permissionButtonStyle.container}>
-        <Text style={permissionButtonStyle.text}>
+      <Surface
+        style={[
+          permissionButtonStyle.container,
+          { backgroundColor: theme.colors.background },
+        ]}
+      >
+        <Text
+          variant="bodyLarge"
+          style={[
+            permissionButtonStyle.text,
+            { color: theme.colors.onBackground, marginBottom: spacing.lg },
+          ]}
+        >
           We need your permission to show the camera for ASL translation
         </Text>
         <Button
+          mode="contained"
           onPress={async () => {
             console.log("Requesting camera permission...");
             const result = await requestPermission();
@@ -57,9 +83,11 @@ export default function HomeScreen() {
               );
             }
           }}
-          title="Grant Camera Permission"
-        />
-      </View>
+          style={{ borderRadius: borderRadius.lg }}
+        >
+          Grant Camera Permission
+        </Button>
+      </Surface>
     );
   }
 
@@ -84,12 +112,6 @@ export default function HomeScreen() {
 
   return (
     <View style={mainStyle.container}>
-      <TouchableOpacity
-        style={[buttonStyle.container, { top: insets.top + 10 }]}
-      >
-        <Text style={buttonStyle.text}>Options</Text>
-      </TouchableOpacity>
-
       <View style={cameraStyle.container}>
         {permission?.granted ? (
           <CameraView
@@ -115,41 +137,95 @@ export default function HomeScreen() {
             }}
           />
         ) : (
-          <View
+          <Surface
             style={[
               cameraStyle.camera,
               {
-                backgroundColor: "#333",
+                backgroundColor: theme.colors.surfaceVariant,
                 justifyContent: "center",
                 alignItems: "center",
               },
             ]}
+            elevation={0}
           >
-            <Text style={{ color: "white", fontSize: 16 }}>
+            <Text
+              variant="bodyMedium"
+              style={{ color: theme.colors.onSurfaceVariant }}
+            >
               No camera permission
             </Text>
-          </View>
+          </Surface>
         )}
-        {!isReady && permission?.granted && (
-          <View style={loadingStyle.container}>
-            <Text style={loadingStyle.text}>Initializing camera...</Text>
-          </View>
+
+        {/* Camera Toggle Button */}
+        <Surface
+          style={[
+            toggleButtonStyle.container,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.outline,
+              top: insets.top + spacing.md,
+              right: spacing.md,
+            },
+          ]}
+          elevation={elevation.level3}
+        >
+          <IconButton
+            icon="camera-flip"
+            size={24}
+            iconColor={theme.colors.primary}
+            onPress={toggleCameraFacing}
+          />
+        </Surface>
+
+        {/* Translation Overlay */}
+        <Surface
+          style={[
+            overlayStyle.container,
+            {
+              backgroundColor: theme.colors.primaryContainer,
+              bottom: insets.bottom,
+              borderTopLeftRadius: borderRadius.lg,
+              borderTopRightRadius: borderRadius.lg,
+            },
+          ]}
+          elevation={elevation.level2}
+        >
+          <Text
+            variant="headlineSmall"
+            style={[
+              overlayStyle.text,
+              { color: theme.colors.onPrimaryContainer },
+            ]}
+          >
+            ASL Translation Ready
+          </Text>
+          <Text
+            variant="bodySmall"
+            style={[
+              overlayStyle.debugText,
+              { color: theme.colors.onPrimaryContainer },
+            ]}
+          >
+            {debugInfo}
+          </Text>
+        </Surface>
+
+        {/* Loading Indicator */}
+        {!isReady && (
+          <Surface style={loadingStyle.container} elevation={0}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+            <Text
+              variant="bodyLarge"
+              style={[
+                loadingStyle.text,
+                { color: theme.colors.onSurface, marginTop: spacing.sm },
+              ]}
+            >
+              Initializing Camera...
+            </Text>
+          </Surface>
         )}
-      </View>
-
-      <TouchableOpacity
-        style={[toggleButtonStyle.container, { top: insets.top + 10 }]}
-        onPress={toggleCameraFacing}
-      >
-        <Text style={toggleButtonStyle.text}>Flip Camera</Text>
-      </TouchableOpacity>
-
-      <View style={[overlayStyle.container, { paddingBottom: insets.bottom }]}>
-        <Text style={overlayStyle.text}>ASL Translation will appear here</Text>
-        <Text style={overlayStyle.debugText}>
-          Debug: {debugInfo} | Ready: {isReady ? "Yes" : "No"} | Camera:{" "}
-          {facing}
-        </Text>
       </View>
     </View>
   );
@@ -166,49 +242,20 @@ const permissionButtonStyle = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "white",
     padding: 20,
   },
   text: {
     textAlign: "center",
-    marginBottom: 20,
     fontSize: 16,
-  },
-});
-
-const buttonStyle = StyleSheet.create({
-  container: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
-    backgroundColor: "#FFF",
-    position: "absolute",
-    zIndex: 1,
-    left: "5%",
-    top: "7%",
-    opacity: 0.9,
-  },
-  text: {
-    color: "blue",
-    fontWeight: "bold",
   },
 });
 
 const toggleButtonStyle = StyleSheet.create({
   container: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
-    backgroundColor: "#FFF",
     position: "absolute",
     zIndex: 1,
-    right: "5%",
-    top: "7%",
-    opacity: 0.9,
-  },
-  text: {
-    color: "blue",
-    fontWeight: "bold",
+    borderRadius: 12,
+    borderWidth: 1,
   },
 });
 
@@ -227,23 +274,19 @@ const cameraStyle = StyleSheet.create({
 const overlayStyle = StyleSheet.create({
   container: {
     position: "absolute",
-    bottom: 0,
-    padding: 15,
+    padding: 20,
     width: "100%",
-    height: "25%",
-    backgroundColor: "rgba(170, 255, 170, 0.85)",
+    minHeight: "25%",
   },
   text: {
     fontSize: 18,
-    color: "black",
     fontWeight: "bold",
     textAlign: "center",
   },
   debugText: {
     fontSize: 12,
-    color: "darkgreen",
     textAlign: "center",
-    marginTop: 5,
+    marginTop: 8,
   },
 });
 
