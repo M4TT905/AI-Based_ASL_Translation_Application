@@ -12,6 +12,8 @@ import { useState, useEffect, useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { spacing, borderRadius, elevation } from "@/constants/paperTheme";
 
+import { TranslationToggleButton } from "@/components/ui/TranslationToggleButton";
+
 export default function HomeScreen() {
   const [facing, setFacing] = useState<CameraType>("back");
   const [permission, requestPermission] = useCameraPermissions();
@@ -20,6 +22,13 @@ export default function HomeScreen() {
   const cameraRef = useRef<CameraView>(null);
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+
+  const [isTranslating, setIsTranslating] = useState(false);
+
+  const handleToggleTranslation = () => {
+    setIsTranslating((prev) => !prev);
+    // Optional: Add side effects here like starting translation, logging, etc.
+  };
 
   useEffect(() => {
     console.log("Camera permission status:", permission);
@@ -110,8 +119,11 @@ export default function HomeScreen() {
     }, 100);
   }
 
+  
+
   return (
     <View style={mainStyle.container}>
+      
       <View style={cameraStyle.container}>
         {permission?.granted ? (
           <CameraView
@@ -209,6 +221,9 @@ export default function HomeScreen() {
           >
             {debugInfo}
           </Text>
+          <TranslationToggleButton
+            isTranslating={isTranslating}
+            onToggle={handleToggleTranslation}/>
         </Surface>
 
         {/* Loading Indicator */}
