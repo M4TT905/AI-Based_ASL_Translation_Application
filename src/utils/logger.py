@@ -82,7 +82,7 @@ class SignLanguageLogger:
         log_file = (
             self.logs_dir / f"{self.name}_{datetime.now().strftime('%Y%m%d')}.log"
         )
-        file_handler = logging.FileHandler(log_file)
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setLevel(self.level)
 
         # Create formatter
