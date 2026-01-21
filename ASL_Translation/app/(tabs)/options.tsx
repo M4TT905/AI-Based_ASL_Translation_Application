@@ -9,29 +9,52 @@ import {
   Switch,
   useTheme,
   Divider,
+  Chip,
 } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { spacing, borderRadius, elevation } from "@/constants/paperTheme";
+import { useCameraConfig } from "@/contexts/CameraConfigContext";
+import { cameraConfigService } from "@/services/cameraConfigService";
+import {
+  CameraResolution,
+  CaptureInterval,
+  RESOLUTION_SETTINGS,
+  CAPTURE_INTERVALS,
+} from "@/types/camera";
 
 export default function OptionsScreen() {
-  const [cameraQuality, setCameraQuality] = useState("High");
-  const [translationMode, setTranslationMode] = useState("Real-time");
   const [notifications, setNotifications] = useState(true);
+  const [bufferSize, setBufferSize] = useState(30);
   const insets = useSafeAreaInsets();
   const theme = useTheme();
 
-  const handleCameraQualityChange = () => {
-    const qualities = ["High", "Medium", "Low"];
-    const currentIndex = qualities.indexOf(cameraQuality);
-    const nextIndex = (currentIndex + 1) % qualities.length;
-    setCameraQuality(qualities[nextIndex]);
+  // Camera configuration context
+  const { config, updateResolution, updateCaptureInterval, resetConfig } =
+    useCameraConfig();
+
+  const handleResolutionChange = async () => {
+    const resolutions = [
+      CameraResolution.HD_1080P,
+      CameraResolution.HD_720P,
+      CameraResolution.SD_480P,
+    ];
+    const currentIndex = resolutions.indexOf(config.resolution);
+    const nextIndex = (currentIndex + 1) % resolutions.length;
+    await updateResolution(resolutions[nextIndex]);
   };
 
-  const handleTranslationModeChange = () => {
-    const modes = ["Real-time", "On-demand", "Batch"];
-    const currentIndex = modes.indexOf(translationMode);
-    const nextIndex = (currentIndex + 1) % modes.length;
-    setTranslationMode(modes[nextIndex]);
+  const handleIntervalChange = async () => {
+    const currentIndex = CAPTURE_INTERVALS.indexOf(config.captureInterval);
+    const nextIndex = (currentIndex + 1) % CAPTURE_INTERVALS.length;
+    await updateCaptureInterval(CAPTURE_INTERVALS[nextIndex]);
+  };
+
+  const handleBufferSizeChange = () => {
+    const sizes = [10, 20, 30, 50];
+    const currentIndex = sizes.indexOf(bufferSize);
+    const nextIndex = (currentIndex + 1) % sizes.length;
+    setBufferSize(sizes[nextIndex]);
+    cameraConfigService.setMaxBufferSize(sizes[nextIndex]);
   };
 
   const handleNotificationsToggle = () => {
@@ -57,15 +80,14 @@ export default function OptionsScreen() {
   const handleResetSettings = () => {
     Alert.alert(
       "Reset Settings",
-      "Are you sure you want to reset all settings to default?",
+      "Are you sure you want to reset all camera settings to default?",
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Reset",
           style: "destructive",
-          onPress: () => {
-            setCameraQuality("High");
-            setTranslationMode("Real-time");
+          onPress: async () => {
+            await resetConfig();
             setNotifications(true);
             Alert.alert(
               "Settings Reset",
@@ -74,6 +96,19 @@ export default function OptionsScreen() {
           },
         },
       ]
+    );
+  };
+
+  const handleTestCapture = () => {
+    const currentResolution = RESOLUTION_SETTINGS[config.resolution];
+    Alert.alert(
+      "Camera Configuration",
+      `Resolution: ${currentResolution.label}\n` +
+        `Dimensions: ${currentResolution.width}x${currentResolution.height}\n` +
+        `Quality: ${Math.round(currentResolution.quality * 100)}%\n` +
+        `Capture Interval: ${config.captureInterval}ms\n` +
+        `FPS Target: ${Math.round(1000 / config.captureInterval)}`,
+      [{ text: "OK" }]
     );
   };
 
@@ -122,23 +157,73 @@ export default function OptionsScreen() {
             </Text>
 
             <List.Item
-              title="Camera Quality"
-              description={`Current: ${cameraQuality}`}
+              title="Resolution"
+              description={RESOLUTION_SETTINGS[config.resolution].label}
               right={() => (
                 <Button
                   mode="outlined"
-                  onPress={handleCameraQualityChange}
+                  onPress={handleResolutionChange}
                   style={{ borderRadius: borderRadius.md }}
                 >
-                  {cameraQuality}
+                  {config.resolution}
                 </Button>
               )}
               style={styles.listItem}
             />
+
+            <Divider style={{ marginVertical: spacing.sm }} />
+
+            <List.Item
+              title="Frame Capture Interval"
+              description={`Capture every ${config.captureInterval}ms (~${Math.round(1000 / config.captureInterval)} FPS)`}
+              right={() => (
+                <Button
+                  mode="outlined"
+                  onPress={handleIntervalChange}
+                  style={{ borderRadius: borderRadius.md }}
+                >
+                  {config.captureInterval}ms
+                </Button>
+              )}
+              style={styles.listItem}
+            />
+
+            <Divider style={{ marginVertical: spacing.sm }} />
+
+            <List.Item
+              title="Frame Buffer Size"
+              description={`Store last ${bufferSize} frames in memory`}
+              right={() => (
+                <Button
+                  mode="outlined"
+                  onPress={handleBufferSizeChange}
+                  style={{ borderRadius: borderRadius.md }}
+                >
+                  {bufferSize}
+                </Button>
+              )}
+              style={styles.listItem}
+            />
+
+            <Divider style={{ marginVertical: spacing.sm }} />
+
+            <Button
+              mode="contained-tonal"
+              onPress={handleTestCapture}
+              icon="test-tube"
+              style={[
+                styles.resetButton,
+                {
+                  borderRadius: borderRadius.lg,
+                },
+              ]}
+            >
+              View Configuration
+            </Button>
           </Card.Content>
         </Card>
 
-        {/* Translation Settings */}
+        {/* App Settings */}
         <Card
           style={[
             styles.section,
@@ -154,25 +239,8 @@ export default function OptionsScreen() {
                 { color: theme.colors.onSurface, marginBottom: spacing.md },
               ]}
             >
-              Translation Settings
+              App Settings
             </Text>
-
-            <List.Item
-              title="Translation Mode"
-              description={`Current: ${translationMode}`}
-              right={() => (
-                <Button
-                  mode="outlined"
-                  onPress={handleTranslationModeChange}
-                  style={{ borderRadius: borderRadius.md }}
-                >
-                  {translationMode}
-                </Button>
-              )}
-              style={styles.listItem}
-            />
-
-            <Divider style={{ marginVertical: spacing.sm }} />
 
             <List.Item
               title="Notifications"

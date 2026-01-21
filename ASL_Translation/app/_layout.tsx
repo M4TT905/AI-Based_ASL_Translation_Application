@@ -11,6 +11,7 @@ import {
   NavigationLightTheme,
   NavigationDarkTheme,
 } from "@/constants/paperTheme";
+import { CameraConfigProvider } from "@/contexts/CameraConfigContext";
 
 export const unstable_settings = {
   anchor: "(tabs)",
@@ -22,18 +23,20 @@ export default function RootLayout() {
 
   return (
     <PaperProvider theme={isDark ? darkTheme : lightTheme}>
-      <ThemeProvider
-        value={isDark ? NavigationDarkTheme : NavigationLightTheme}
-      >
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="modal"
-            options={{ presentation: "modal", title: "Modal" }}
-          />
-        </Stack>
-        <StatusBar style="auto" />
-      </ThemeProvider>
+      <CameraConfigProvider>
+        <ThemeProvider
+          value={isDark ? NavigationDarkTheme : NavigationLightTheme}
+        >
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="modal"
+              options={{ presentation: "modal", title: "Modal" }}
+            />
+          </Stack>
+          <StatusBar style="auto" />
+        </ThemeProvider>
+      </CameraConfigProvider>
     </PaperProvider>
   );
 }

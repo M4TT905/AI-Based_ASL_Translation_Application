@@ -6,6 +6,7 @@ import {
   IconButton,
   useTheme,
   ActivityIndicator,
+  Chip,
 } from "react-native-paper";
 import { CameraView, CameraType, useCameraPermissions } from "expo-camera";
 import { useState, useEffect, useRef } from "react";
@@ -13,6 +14,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { spacing, borderRadius, elevation } from "@/constants/paperTheme";
 
 import { TranslationToggleButton } from "@/components/ui/TranslationToggleButton";
+import { useCameraConfig } from "@/contexts/CameraConfigContext";
+import { CapturedFrame } from "@/types/camera";
 
 export default function HomeScreen() {
   const [facing, setFacing] = useState<CameraType>("back");
@@ -24,10 +27,75 @@ export default function HomeScreen() {
   const theme = useTheme();
 
   const [isTranslating, setIsTranslating] = useState(false);
+  const [lastCapturedImage, setLastCapturedImage] = useState<CapturedFrame | null>(null);
 
-  const handleToggleTranslation = () => {
-    setIsTranslating((prev) => !prev);
-    // Optional: Add side effects here like starting translation, logging, etc.
+  // Camera configuration context
+  const {
+    config,
+    stats,
+    startCapture,
+    stopCapture,
+    pauseCapture,
+    resumeCapture,
+    isCapturing,
+    isPaused,
+    captureSingleImage,
+    bufferSize,
+  } = useCameraConfig();
+
+  // Handle frame capture callback
+  const handleFrameCapture = async (frame: CapturedFrame) => {
+    // Placeholder for AI model processing
+    // TODO: Send frame to ASL recognition model
+    console.log(
+      `Frame captured: ${frame.width}x${frame.height} at ${frame.timestamp}`
+    );
+  };
+
+  const handleSingleCapture = async () => {
+    if (!cameraRef.current) {
+      Alert.alert("Camera Error", "Camera is not ready yet");
+      return;
+    }
+
+    const frame = await captureSingleImage();
+    if (frame) {
+      setLastCapturedImage(frame);
+      // TODO: Send to AI model
+      Alert.alert(
+        "Image Captured",
+        `Captured ${frame.resolution} image\nReady for AI processing`,
+        [{ text: "OK" }]
+      );
+    } else {
+      Alert.alert("Capture Failed", "Could not capture image");
+    }
+  };
+
+  const handleToggleTranslation = async () => {
+    if (isTranslating) {
+      // Stop translation
+      stopCapture();
+      setIsTranslating(false);
+      setDebugInfo("Translation stopped");
+    } else {
+      // Start translation
+      if (!cameraRef.current) {
+        Alert.alert("Camera Error", "Camera is not ready yet");
+        return;
+      }
+
+      const started = await startCapture(cameraRef, handleFrameCapture);
+      if (started) {
+        setIsTranslating(true);
+        setDebugInfo("Translation active - capturing frames");
+      } else {
+        Alert.alert(
+          "Capture Error",
+          "Failed to start frame capture. Please try again."
+        );
+      }
+    }
   };
 
   useEffect(() => {
@@ -210,7 +278,7 @@ export default function HomeScreen() {
               { color: theme.colors.onPrimaryContainer },
             ]}
           >
-            ASL Translation Ready
+            ASL Translation {isTranslating ? "Active" : "Ready"}
           </Text>
           <Text
             variant="bodySmall"
@@ -221,9 +289,59 @@ export default function HomeScreen() {
           >
             {debugInfo}
           </Text>
+
+          {/* Capture Stats */}
+          {isCapturing && (
+            <View style={overlayStyle.statsContainer}>
+              <Chip
+                mode="flat"
+                compact
+                style={{ marginHorizontal: spacing.xs }}
+              >
+                {stats.framesPerSecond} FPS
+              </Chip>
+              <Chip
+                mode="flat"
+                compact
+                style={{ marginHorizontal: spacing.xs }}
+              >
+                {stats.totalFramesCaptured} frames
+              </Chip>
+              <Chip
+                mode="flat"
+                compact
+                style={{ marginHorizontal: spacing.xs }}
+              >
+                Buffer: {bufferSize}
+              </Chip>
+              <Chip
+                mode="flat"
+                compact
+                style={{ marginHorizontal: spacing.xs }}
+              >
+                {config.resolution}
+              </Chip>
+            </View>
+          )}
+
+          {/* Single Capture Button */}
+          <Button
+            mode="contained"
+            icon="camera"
+            onPress={handleSingleCapture}
+            disabled={isCapturing}
+            style={{
+              marginTop: spacing.md,
+              borderRadius: borderRadius.lg,
+            }}
+          >
+            Capture Single Image
+          </Button>
+
           <TranslationToggleButton
             isTranslating={isTranslating}
-            onToggle={handleToggleTranslation}/>
+            onToggle={handleToggleTranslation}
+          />
         </Surface>
 
         {/* Loading Indicator */}
@@ -302,6 +420,14 @@ const overlayStyle = StyleSheet.create({
     fontSize: 12,
     textAlign: "center",
     marginTop: 8,
+  },
+  statsContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 12,
+    marginBottom: 8,
+    flexWrap: "wrap",
   },
 });
 
