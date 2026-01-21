@@ -1,3 +1,4 @@
+import torch
 from data import DETRData
 from model import DETR
 from loss import DETRLoss, HungarianMatcher
@@ -7,7 +8,8 @@ from colorama import Fore
 from utils.logger import get_logger
 from utils.rich_handlers import TrainingHandler, rich_training_context
 import sys
-import torch
+#import torch
+
 from utils.boxes import stacker
 from utils.setup import get_classes
 
@@ -24,7 +26,7 @@ if __name__ == '__main__':
 
     num_classes = len(get_classes())
     model = DETR(num_classes=num_classes)
-    model.load_pretrained('pretrained/4426_model.pt')
+    model.load_pretrained('checkpoints/99_model.pt')
     model.log_model_info()
     model.train() 
 
