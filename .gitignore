@@ -1,0 +1,10 @@
+node_modules
+.expo
+venv_asl
+venv
+__pycache__
+*.pyc
+*.pkl
+*.onnx
+*.pth
+.env
