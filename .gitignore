@@ -8,3 +8,5 @@ __pycache__
 *.onnx
 *.pth
 .env
+.claude
+expo-env.d.ts
