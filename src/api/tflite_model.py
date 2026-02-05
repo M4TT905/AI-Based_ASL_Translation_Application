@@ -9,15 +9,14 @@ import json
 import numpy as np
 from pathlib import Path
 
-# Support multiple TFLite runtime packages
+# Support multiple TFLite runtime packages (prefer modern ai_edge_litert)
 try:
-    from tflite_runtime.interpreter import Interpreter
+    from ai_edge_litert.interpreter import Interpreter
 except ImportError:
     try:
-        from tensorflow.lite.python.interpreter import Interpreter
+        from tflite_runtime.interpreter import Interpreter
     except ImportError:
-        from tensorflow import lite as _tflite
-        Interpreter = _tflite.Interpreter
+        from tensorflow.lite.python.interpreter import Interpreter
 
 
 class ASLTFLiteModel:
