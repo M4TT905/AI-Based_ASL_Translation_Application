@@ -16,6 +16,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { TranslationToggleButton } from "@/components/ui/TranslationToggleButton";
 import { useCameraConfig } from "@/contexts/CameraConfigContext";
+import { useAccessibility } from "@/contexts/AccessibilityContext";
 import { CapturedFrame } from "@/types/camera";
 import * as ttsService from "@/services/ttsService";
 
@@ -27,6 +28,7 @@ export default function HomeScreen() {
   const cameraRef = useRef<CameraView>(null);
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const { announce } = useAccessibility();
 
   const [isTranslating, setIsTranslating] = useState(false);
   const [lastCapturedImage, setLastCapturedImage] = useState<CapturedFrame | null>(null);
@@ -68,8 +70,12 @@ export default function HomeScreen() {
 
     if (predictedLetter === " ") {
       const word = accumulatedWord.current.trim();
-      if (word.length > 0 && ttsEnabled) {
-        ttsService.speakWord(word);
+      if (word.length > 0) {
+        if (ttsEnabled) {
+          ttsService.speakWord(word);
+        } else {
+          announce(word);
+        }
       }
       accumulatedWord.current = "";
     } else {
@@ -103,6 +109,7 @@ export default function HomeScreen() {
       stopCapture();
       setIsTranslating(false);
       setDebugInfo("Translation stopped");
+      announce("Translation stopped");
     } else {
       // Start translation
       if (!cameraRef.current) {
@@ -114,6 +121,7 @@ export default function HomeScreen() {
       if (started) {
         setIsTranslating(true);
         setDebugInfo("Translation active - capturing frames");
+        announce("Translation started");
       } else {
         Alert.alert(
           "Capture Error",
@@ -186,6 +194,7 @@ export default function HomeScreen() {
             }
           }}
           style={{ borderRadius: borderRadius.lg }}
+          accessibilityLabel="Grant camera permission"
         >
           Grant Camera Permission
         </Button>
@@ -205,18 +214,20 @@ export default function HomeScreen() {
   };
 
   function toggleCameraFacing() {
-    setFacing((current) => (current === "back" ? "front" : "back"));
+    const next = facing === "back" ? "front" : "back";
+    setFacing(next);
+    announce(`Camera switched to ${next}`);
     // Reinitialize camera after facing change
     setTimeout(() => {
       getSupportedRatios();
     }, 100);
   }
 
-  
+
 
   return (
     <View style={mainStyle.container}>
-      
+
       <View style={cameraStyle.container}>
         {permission?.granted ? (
           <CameraView
@@ -280,6 +291,7 @@ export default function HomeScreen() {
             size={24}
             iconColor={theme.colors.primary}
             onPress={toggleCameraFacing}
+            accessibilityLabel="Flip camera"
           />
         </Surface>
 
@@ -359,6 +371,7 @@ export default function HomeScreen() {
               marginTop: spacing.md,
               borderRadius: borderRadius.lg,
             }}
+            accessibilityLabel="Capture single image"
           >
             Capture Single Image
           </Button>
