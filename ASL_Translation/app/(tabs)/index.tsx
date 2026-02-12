@@ -12,10 +12,12 @@ import { CameraView, CameraType, useCameraPermissions } from "expo-camera";
 import { useState, useEffect, useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { spacing, borderRadius, elevation } from "@/constants/paperTheme";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { TranslationToggleButton } from "@/components/ui/TranslationToggleButton";
 import { useCameraConfig } from "@/contexts/CameraConfigContext";
 import { CapturedFrame } from "@/types/camera";
+import * as ttsService from "@/services/ttsService";
 
 export default function HomeScreen() {
   const [facing, setFacing] = useState<CameraType>("back");
@@ -28,6 +30,8 @@ export default function HomeScreen() {
 
   const [isTranslating, setIsTranslating] = useState(false);
   const [lastCapturedImage, setLastCapturedImage] = useState<CapturedFrame | null>(null);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const accumulatedWord = useRef("");
 
   // Camera configuration context
   const {
@@ -43,13 +47,34 @@ export default function HomeScreen() {
     bufferSize,
   } = useCameraConfig();
 
+  // Load TTS preference from storage
+  useEffect(() => {
+    AsyncStorage.getItem("tts_enabled").then((value) => {
+      setTtsEnabled(value === null ? true : value === "true");
+    });
+  }, []);
+
   // Handle frame capture callback
   const handleFrameCapture = async (frame: CapturedFrame) => {
-    // Placeholder for AI model processing
-    // TODO: Send frame to ASL recognition model
-    console.log(
-      `Frame captured: ${frame.width}x${frame.height} at ${frame.timestamp}`
-    );
+    // TODO: Send frame to ASL recognition model and get predictedLetter
+    const predictedLetter: string | null = null; // replace with model output
+
+    if (predictedLetter === null) {
+      console.log(
+        `Frame captured: ${frame.width}x${frame.height} at ${frame.timestamp}`
+      );
+      return;
+    }
+
+    if (predictedLetter === " ") {
+      const word = accumulatedWord.current.trim();
+      if (word.length > 0 && ttsEnabled) {
+        ttsService.speakWord(word);
+      }
+      accumulatedWord.current = "";
+    } else {
+      accumulatedWord.current += predictedLetter;
+    }
   };
 
   const handleSingleCapture = async () => {

@@ -1,5 +1,6 @@
 import { StyleSheet, ScrollView, Alert } from "react-native";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Text,
   Surface,
@@ -25,12 +26,24 @@ import {
 export default function OptionsScreen() {
   const [notifications, setNotifications] = useState(true);
   const [bufferSize, setBufferSize] = useState(30);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
   const insets = useSafeAreaInsets();
   const theme = useTheme();
 
   // Camera configuration context
   const { config, updateResolution, updateCaptureInterval, resetConfig } =
     useCameraConfig();
+
+  useEffect(() => {
+    AsyncStorage.getItem("tts_enabled").then((value) => {
+      setTtsEnabled(value === null ? true : value === "true");
+    });
+  }, []);
+
+  const handleTtsToggle = async (value: boolean) => {
+    setTtsEnabled(value);
+    await AsyncStorage.setItem("tts_enabled", String(value));
+  };
 
   const handleResolutionChange = async () => {
     const resolutions = [
@@ -251,6 +264,27 @@ export default function OptionsScreen() {
                   onValueChange={handleNotificationsToggle}
                   thumbColor={
                     notifications ? theme.colors.primary : theme.colors.outline
+                  }
+                  trackColor={{
+                    false: theme.colors.surfaceVariant,
+                    true: theme.colors.primaryContainer,
+                  }}
+                />
+              )}
+              style={styles.listItem}
+            />
+
+            <Divider style={{ marginVertical: spacing.sm }} />
+
+            <List.Item
+              title="Text-to-Speech"
+              description="Speak translated words aloud"
+              right={() => (
+                <Switch
+                  value={ttsEnabled}
+                  onValueChange={handleTtsToggle}
+                  thumbColor={
+                    ttsEnabled ? theme.colors.primary : theme.colors.outline
                   }
                   trackColor={{
                     false: theme.colors.surfaceVariant,
