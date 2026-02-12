@@ -8,21 +8,30 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import {
   lightTheme,
   darkTheme,
+  highContrastTheme,
   NavigationLightTheme,
   NavigationDarkTheme,
 } from "@/constants/paperTheme";
 import { CameraConfigProvider } from "@/contexts/CameraConfigContext";
+import { AccessibilityProvider, useAccessibility } from "@/contexts/AccessibilityContext";
 
 export const unstable_settings = {
   anchor: "(tabs)",
 };
 
-export default function RootLayout() {
+function ThemedApp() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
+  const { isHighContrast } = useAccessibility();
+
+  const paperTheme = isHighContrast
+    ? highContrastTheme
+    : isDark
+    ? darkTheme
+    : lightTheme;
 
   return (
-    <PaperProvider theme={isDark ? darkTheme : lightTheme}>
+    <PaperProvider theme={paperTheme}>
       <CameraConfigProvider>
         <ThemeProvider
           value={isDark ? NavigationDarkTheme : NavigationLightTheme}
@@ -38,5 +47,13 @@ export default function RootLayout() {
         </ThemeProvider>
       </CameraConfigProvider>
     </PaperProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <AccessibilityProvider>
+      <ThemedApp />
+    </AccessibilityProvider>
   );
 }
