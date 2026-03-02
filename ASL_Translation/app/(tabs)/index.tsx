@@ -50,6 +50,29 @@ export default function HomeScreen() {
     console.log(
       `Frame captured: ${frame.width}x${frame.height} at ${frame.timestamp}`
     );
+    const response = await fetch(frame.uri); // get the file data
+    const frameBlob = await response.blob(); // convert to Blob
+
+    const formData = new FormData();
+    formData.append("file", frameBlob, "frame.jpg"); // name must match endpoint param
+
+    try {
+      const response = await fetch("http://127.0.0.1:9000/detect", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("Server error:", response.status, text);
+        return;
+      }
+
+      const data = await response.json();
+      console.log("Detected:", data);
+    } catch (err) {
+      console.error("Fetch failed:", err);
+    }
   };
 
   const handleSingleCapture = async () => {
