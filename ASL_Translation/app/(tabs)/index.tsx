@@ -56,12 +56,47 @@ export default function HomeScreen() {
     });
   }, []);
 
+// Send image to the backend server
+const sendFrameToServer = async (frame: CapturedFrame) => {
+  try {
+    const formData = new FormData();
+
+    // Convert URI to blob
+    const response = await fetch(frame.uri); 
+    const blob = await response.blob();
+
+    // Append the blob as "file"
+    formData.append("file", blob, "capture.jpg");
+
+    const serverUrl = "http://127.0.0.1:8000/translate/";
+
+    const res = await fetch(serverUrl, {
+      method: "POST",
+      body: formData,
+      // Do NOT set Content-Type manually
+    });
+
+    const json = await res.json();
+    console.log("Server response JSON:", json);
+
+    if (!res.ok) {
+      console.error("Server returned non-OK status:", res.status);
+      return null;
+    }
+
+    return json.translation;
+  } catch (err) {
+    console.error("Error sending frame:", err);
+    return null;
+  }
+};
+
   // Handle frame capture callback
   const handleFrameCapture = async (frame: CapturedFrame) => {
     // TODO: Send frame to ASL recognition model and get predictedLetter
-    const predictedLetter: string | null = null; // replace with model output
+    const predictedLetter = await sendFrameToServer(frame);
 
-    if (predictedLetter === null) {
+    if (!predictedLetter) {
       console.log(
         `Frame captured: ${frame.width}x${frame.height} at ${frame.timestamp}`
       );
@@ -84,7 +119,7 @@ export default function HomeScreen() {
   };
 
   const handleSingleCapture = async () => {
-    if (!cameraRef.current) {
+    if (!cameraRef.current || !isReady) {
       Alert.alert("Camera Error", "Camera is not ready yet");
       return;
     }
@@ -92,12 +127,12 @@ export default function HomeScreen() {
     const frame = await captureSingleImage();
     if (frame) {
       setLastCapturedImage(frame);
-      // TODO: Send to AI model
-      Alert.alert(
-        "Image Captured",
-        `Captured ${frame.resolution} image\nReady for AI processing`,
-        [{ text: "OK" }]
-      );
+      const prediction = await sendFrameToServer(frame);
+      if (prediction) {
+        Alert.alert("AI Prediction", `Predicted: ${prediction}`, [{ text: "OK" }]);
+      } else {
+        Alert.alert("Prediction Failed", "Could not get prediction from server");
+      }
     } else {
       Alert.alert("Capture Failed", "Could not capture image");
     }
