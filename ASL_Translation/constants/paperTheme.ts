@@ -57,6 +57,23 @@ const customColors = {
   },
 };
 
+// High contrast theme for accessibility
+export const highContrastTheme = {
+  ...MD3LightTheme,
+  colors: {
+    ...MD3LightTheme.colors,
+    primary: '#ffff00', onPrimary: '#000000',
+    primaryContainer: '#1a1a00', onPrimaryContainer: '#ffff00',
+    secondary: '#00ffff', onSecondary: '#000000',
+    error: '#ff6b6b', onError: '#000000',
+    background: '#000000', onBackground: '#ffffff',
+    surface: '#000000', onSurface: '#ffffff',
+    surfaceVariant: '#1a1a1a', onSurfaceVariant: '#ffffff',
+    outline: '#ffffff', outlineVariant: '#666666',
+  },
+  roundness: 12,
+};
+
 // Custom light theme
 export const lightTheme = {
   ...MD3LightTheme,
