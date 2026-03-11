@@ -20,6 +20,9 @@ export const TranslationToggleButton: React.FC<Props> = ({ isTranslating, onTogg
             onValueChange={onToggle}
             value={isTranslating}
             style={{ transform: [{ scaleX: 2 }, { scaleY: 2 }] }}
+            accessibilityLabel={isTranslating ? 'Stop translation' : 'Start translation'}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: isTranslating }}
             />
         </View>
     );
