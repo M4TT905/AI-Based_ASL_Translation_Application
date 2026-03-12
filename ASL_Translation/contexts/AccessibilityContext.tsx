@@ -23,6 +23,7 @@ interface AccessibilityContextType {
   setTtsEnabled: (v: boolean) => Promise<void>;
   fontSize: FontSize;
   setFontSize: (v: FontSize) => Promise<void>;
+  fontScale: number;
   announce: (message: string) => void;
 }
 
@@ -78,6 +79,8 @@ export function AccessibilityProvider({
     AccessibilityInfo.announceForAccessibility(message);
   }, []);
 
+  const fontScale = fontSize === "small" ? 0.8 : fontSize === "large" ? 1.3 : 1;
+
   const value: AccessibilityContextType = {
     isHighContrast,
     setIsHighContrast,
@@ -85,6 +88,7 @@ export function AccessibilityProvider({
     setTtsEnabled,
     fontSize,
     setFontSize,
+    fontScale,
     announce,
   };
 
