@@ -46,7 +46,7 @@ export default function HomeScreen() {
     bufferSize,
   } = useCameraConfig();
 
-  const { ttsEnabled, announce } = useAccessibility();
+  const { ttsEnabled, announce, fontScale } = useAccessibility();
 
   // Called when the model recognizes a complete word (space received)
   const finalizeWord = (word: string) => {
@@ -306,7 +306,7 @@ export default function HomeScreen() {
             variant="headlineSmall"
             style={[
               overlayStyle.text,
-              { color: theme.colors.onPrimaryContainer },
+              { color: theme.colors.onPrimaryContainer, fontSize: Math.round(18 * fontScale) },
             ]}
           >
             ASL Translation {isTranslating ? "Active" : "Ready"}
@@ -423,7 +423,6 @@ const permissionButtonStyle = StyleSheet.create({
   },
   text: {
     textAlign: "center",
-    fontSize: 16,
   },
 });
 
@@ -466,7 +465,6 @@ const overlayStyle = StyleSheet.create({
     minHeight: 44,
   },
   debugText: {
-    fontSize: 12,
     textAlign: "center",
     marginTop: 8,
   },
@@ -493,7 +491,6 @@ const loadingStyle = StyleSheet.create({
   },
   text: {
     color: "white",
-    fontSize: 16,
     fontWeight: "bold",
   },
 });
