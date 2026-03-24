@@ -19,6 +19,7 @@ import { useCameraConfig } from "@/contexts/CameraConfigContext";
 import { useAccessibility } from "@/contexts/AccessibilityContext";
 import { speakWord as speakTranslation } from "@/services/ttsService";
 import { errorService } from "@/services/errorService";
+import { apiService } from "@/services/apiService";
 import { CapturedFrame } from "@/types/camera";
 
 export default function HomeScreen() {
@@ -34,6 +35,7 @@ export default function HomeScreen() {
   const [translationText, setTranslationText] = useState("");
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [serverConnected, setServerConnected] = useState(false);
   const accumulatedWord = useRef("");
 
   const {
@@ -59,18 +61,20 @@ export default function HomeScreen() {
   };
 
   const handleFrameCapture = async (frame: CapturedFrame) => {
-    console.log(
-      `Frame captured: ${frame.width}x${frame.height} at ${frame.timestamp}`
-    );
-    // TODO: Send frame to ASL model → get predictedLetter, then call:
-    //   if (predictedLetter === ' ') {
-    //     finalizeWord(accumulatedWord.current);
-    //     accumulatedWord.current = '';
-    //   } else {
-    //     accumulatedWord.current += predictedLetter;
-    //     setTranslationText(accumulatedWord.current);
-    //   }
-    void finalizeWord; // referenced until model integration
+    const letter = await apiService.predictFrame(frame);
+    if (!letter) return;
+
+    if (letter === " ") {
+      // Space = word boundary: finalise the accumulated word, reset buffer
+      if (accumulatedWord.current.length > 0) {
+        finalizeWord(accumulatedWord.current);
+        accumulatedWord.current = "";
+      }
+    } else {
+      // Regular letter: append and update live display
+      accumulatedWord.current += letter;
+      setTranslationText(accumulatedWord.current);
+    }
   };
 
   const handleSingleCapture = async () => {
@@ -100,13 +104,24 @@ export default function HomeScreen() {
   const handleToggleTranslation = async () => {
     if (isTranslating) {
       stopCapture();
+      apiService.disconnect();
       setIsTranslating(false);
+      setServerConnected(false);
       setDebugInfo("Translation stopped");
       accumulatedWord.current = "";
       announce("Translation stopped");
     } else {
       if (!cameraRef.current) {
         setSnackbarMessage("Camera is not ready yet");
+        setSnackbarVisible(true);
+        return;
+      }
+
+      // Check backend before starting capture
+      const connected = await apiService.checkConnection();
+      setServerConnected(connected);
+      if (!connected) {
+        setSnackbarMessage("Cannot reach the ASL server. Make sure it is running.");
         setSnackbarVisible(true);
         return;
       }
@@ -339,6 +354,19 @@ export default function HomeScreen() {
           >
             {debugInfo}
           </Text>
+
+          {/* Server status, always visible when translation is toggled on */}
+          {isTranslating && (
+            <Chip
+              mode="flat"
+              compact
+              icon={serverConnected ? "check-circle" : "alert-circle"}
+              style={{ alignSelf: "center", marginBottom: spacing.xs }}
+              accessibilityLabel={serverConnected ? "Server connected" : "Server offline"}
+            >
+              {serverConnected ? "Server connected" : "Server offline"}
+            </Chip>
+          )}
 
           {/* Capture Stats */}
           {isCapturing && (
