@@ -28,4 +28,4 @@ export const API_TIMEOUT_MS = 5000;
  * The mock cycles through "hello " so you can see letters accumulate → word finalize → TTS fire.
  * TODO Flip to false once backend server team is ready
  */
-export const USE_MOCK_API = true;
+export const USE_MOCK_API = false;

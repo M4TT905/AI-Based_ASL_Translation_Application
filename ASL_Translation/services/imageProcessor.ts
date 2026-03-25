@@ -46,12 +46,19 @@ async function realPredict(frame: CapturedFrame): Promise<string | null> {
 
   try {
     const formData = new FormData();
-    // React Native accepts { uri, type, name } as a file entry in FormData
-    formData.append("file", {
-      uri: frame.uri,
-      type: "image/jpeg",
-      name: "frame.jpg",
-    } as unknown as Blob);
+    if (frame.uri.startsWith("blob:") || frame.uri.startsWith("data:")) {
+      // Web: URI is a blob/data URL — fetch it to get a real Blob
+      const res = await fetch(frame.uri);
+      const blob = await res.blob();
+      formData.append("file", blob, "frame.jpg");
+    } else {
+      // Native: React Native accepts { uri, type, name } as a file entry
+      formData.append("file", {
+        uri: frame.uri,
+        type: "image/jpeg",
+        name: "frame.jpg",
+      } as unknown as Blob);
+    }
 
     const response = await fetch(`${API_BASE_URL}${PREDICT_ENDPOINT}`, {
       method: "POST",
