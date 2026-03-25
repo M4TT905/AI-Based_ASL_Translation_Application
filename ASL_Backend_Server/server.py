@@ -54,6 +54,10 @@ def get_flattened_keypoints(ml_result):
 
 classes = ["0","1","2","3","4","5","6","7","8","9","hello","i_love_you","thanks"]
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
 @app.post("/translate/")
 async def translate_image(file: UploadFile = File(...)):
     try:
