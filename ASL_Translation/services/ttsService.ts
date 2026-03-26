@@ -8,3 +8,8 @@ export function speakWord(word: string): void {
 export function stop(): void {
   Speech.stop();
 }
+
+export async function isAvailable(): Promise<boolean> {
+  const isSpeaking = await Speech.isSpeakingAsync();
+  return !isSpeaking;
+}

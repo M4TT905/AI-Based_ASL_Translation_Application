@@ -13,6 +13,7 @@ import { CameraView, CameraType, useCameraPermissions } from "expo-camera";
 import { useState, useEffect, useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { spacing, borderRadius, elevation } from "@/constants/paperTheme";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { TranslationToggleButton } from "@/components/ui/TranslationToggleButton";
 import { useCameraConfig } from "@/contexts/CameraConfigContext";
@@ -21,6 +22,7 @@ import { speakWord as speakTranslation } from "@/services/ttsService";
 import { errorService } from "@/services/errorService";
 import { apiService } from "@/services/apiService";
 import { CapturedFrame } from "@/types/camera";
+import * as ttsService from "@/services/ttsService";
 
 export default function HomeScreen() {
   const [facing, setFacing] = useState<CameraType>("back");
@@ -30,6 +32,7 @@ export default function HomeScreen() {
   const cameraRef = useRef<CameraView>(null);
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const { announce } = useAccessibility();
 
   const [isTranslating, setIsTranslating] = useState(false);
   const [translationText, setTranslationText] = useState("");
@@ -300,6 +303,7 @@ export default function HomeScreen() {
             size={24}
             iconColor={theme.colors.primary}
             onPress={toggleCameraFacing}
+            accessibilityLabel="Flip camera"
             accessibilityLabel="Flip camera"
           />
         </Surface>

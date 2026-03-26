@@ -1,5 +1,6 @@
 import { StyleSheet, ScrollView, Alert } from "react-native";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Text,
   Surface,
@@ -15,10 +16,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { spacing, borderRadius, elevation } from "@/constants/paperTheme";
 import { useCameraConfig } from "@/contexts/CameraConfigContext";
 import { useAccessibility } from "@/contexts/AccessibilityContext";
+import { useAccessibility } from "@/contexts/AccessibilityContext";
 import { cameraConfigService } from "@/services/cameraConfigService";
 import {
   CameraResolution,
-  CaptureInterval,
   RESOLUTION_SETTINGS,
   CAPTURE_INTERVALS,
 } from "@/types/camera";
@@ -26,8 +27,10 @@ import {
 export default function OptionsScreen() {
   const [notifications, setNotifications] = useState(true);
   const [bufferSize, setBufferSize] = useState(30);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const { isHighContrast, setIsHighContrast, announce } = useAccessibility();
 
   const { config, updateResolution, updateCaptureInterval, resetConfig } =
     useCameraConfig();
@@ -380,6 +383,7 @@ export default function OptionsScreen() {
             <List.Item
               title="Help & Support"
               description="Get help with using the app"
+              accessibilityLabel="Help and support"
               left={(props: any) => (
                 <List.Icon
                   {...props}
@@ -397,6 +401,7 @@ export default function OptionsScreen() {
             <List.Item
               title="About"
               description="App information and version"
+              accessibilityLabel="About ASL Translation"
               left={(props: any) => (
                 <List.Icon
                   {...props}
