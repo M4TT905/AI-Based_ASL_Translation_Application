@@ -12,11 +12,6 @@ model = load_model("../ASL_MediaPipe_Refined/refined_checkpoint_for_new_keypoint
 
 app = FastAPI()
 
-origins = [
-    "http://localhost:8081",
-    "http://127.0.0.1:8081",
-]
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -40,13 +35,15 @@ options = HandLandmarkerOptions(
 landmarker = HandLandmarker.create_from_options(options)
 
 def get_flattened_keypoints(ml_result):
-    all_coords = []
-    if ml_result.hand_landmarks:
-        for hand_landmarks in ml_result.hand_landmarks:
-            for lm in hand_landmarks:
-                all_coords.extend([lm.x, lm.y, lm.z])
+    if not ml_result.hand_landmarks:
+        return None  # no hand detected
 
-    # pad zeros if < 126
+    all_coords = []
+    for hand_landmarks in ml_result.hand_landmarks:
+        for lm in hand_landmarks:
+            all_coords.extend([lm.x, lm.y, lm.z])
+
+    # pad zeros if only one hand detected
     while len(all_coords) < 126:
         all_coords.append(0.0)
 
@@ -61,32 +58,31 @@ async def health():
 @app.post("/translate/")
 async def translate_image(file: UploadFile = File(...)):
     try:
-        # Read uploaded image bytes
         image_bytes = await file.read()
         pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         img_np = np.array(pil_img)
 
-        # Convert to Mediapipe Image
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_np)
-
-        # Detect landmarks
         result = landmarker.detect(mp_image)
 
-        # Flatten to shape (126,)
         keypoints = get_flattened_keypoints(result)
+        if keypoints is None:
+            return JSONResponse({"translation": None, "confidence": 0.0})
 
-        # Prepare shape (1, 30, 126)
-        keypoints = np.expand_dims(keypoints, 0)  # (1,126)
-        keypoints = np.expand_dims(keypoints, 1)  # (1,1,126)
-        keypoints = np.repeat(keypoints, 30, axis=1)  # (1,30,126)
+        keypoints = np.expand_dims(keypoints, 0)   # (1, 126)
+        keypoints = np.expand_dims(keypoints, 1)   # (1, 1, 126)
+        keypoints = np.repeat(keypoints, 30, axis=1)  # (1, 30, 126)
 
-        # Predict
         prediction = model.predict(keypoints)
-        pred_class = np.argmax(prediction, axis=1)[0]
-        translated = classes[pred_class]
+        pred_class = int(np.argmax(prediction, axis=1)[0])
+        confidence = float(np.max(prediction))
 
-        print(translated)
-        return JSONResponse({"translation": translated})
+        if pred_class >= len(classes):
+            return JSONResponse({"translation": None, "confidence": 0.0})
+
+        translated = classes[pred_class]
+        print(translated, confidence)
+        return JSONResponse({"translation": translated, "confidence": confidence})
 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
