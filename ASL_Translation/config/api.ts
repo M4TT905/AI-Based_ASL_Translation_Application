@@ -23,6 +23,13 @@ export const HEALTH_ENDPOINT = "/health";
 // 5 s is generous for a local server
 export const API_TIMEOUT_MS = 5000;
 
+// Minimum confidence score to accept a prediction (0–1).
+// Frames below this threshold are silently dropped.
+export const CONFIDENCE_THRESHOLD = 0.70;
+
+// JSON key that holds the confidence score in the response.
+export const CONFIDENCE_KEY = "confidence" as const;
+
 /**
  * Mock mode: set to true to test the full UI loop without the backend.
  * The mock cycles through "hello " so you can see letters accumulate → word finalize → TTS fire.

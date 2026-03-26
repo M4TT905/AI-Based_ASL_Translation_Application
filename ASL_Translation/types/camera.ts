@@ -89,7 +89,7 @@ export interface CameraConfig {
  */
 export const DEFAULT_CAMERA_CONFIG: CameraConfig = {
   resolution: CameraResolution.HD_720P,
-  captureInterval: 200,
+  captureInterval: 500,
   isPaused: false,
   isCapturing: false,
   captureMode: CaptureMode.CONTINUOUS,

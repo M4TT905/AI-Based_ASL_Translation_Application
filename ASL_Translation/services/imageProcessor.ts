@@ -16,6 +16,8 @@ import {
   API_BASE_URL,
   PREDICT_ENDPOINT,
   RESPONSE_KEY,
+  CONFIDENCE_KEY,
+  CONFIDENCE_THRESHOLD,
   API_TIMEOUT_MS,
   USE_MOCK_API,
 } from "@/config/api";
@@ -73,9 +75,20 @@ async function realPredict(frame: CapturedFrame): Promise<string | null> {
 
     const data: Record<string, unknown> = await response.json();
     const result = data[RESPONSE_KEY];
+    const confidence = data[CONFIDENCE_KEY];
+
+    // No hand detected — server returns null translation
+    if (result === null || result === undefined) {
+      return null;
+    }
 
     if (typeof result !== "string") {
       console.warn("[imageProcessor] Unexpected response shape:", data);
+      return null;
+    }
+
+    // Drop low-confidence predictions
+    if (typeof confidence === "number" && confidence < CONFIDENCE_THRESHOLD) {
       return null;
     }
 
