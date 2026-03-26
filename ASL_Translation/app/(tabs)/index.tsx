@@ -1,4 +1,4 @@
-import { StyleSheet, View, Alert } from "react-native";
+import { StyleSheet, View } from "react-native";
 import {
   Text,
   Button,
@@ -7,6 +7,7 @@ import {
   useTheme,
   ActivityIndicator,
   Chip,
+  Snackbar,
 } from "react-native-paper";
 import { CameraView, CameraType, useCameraPermissions } from "expo-camera";
 import { useState, useEffect, useRef } from "react";
@@ -17,6 +18,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { TranslationToggleButton } from "@/components/ui/TranslationToggleButton";
 import { useCameraConfig } from "@/contexts/CameraConfigContext";
 import { useAccessibility } from "@/contexts/AccessibilityContext";
+import { speakWord as speakTranslation } from "@/services/ttsService";
+import { errorService } from "@/services/errorService";
+import { apiService } from "@/services/apiService";
 import { CapturedFrame } from "@/types/camera";
 import * as ttsService from "@/services/ttsService";
 
@@ -31,102 +35,115 @@ export default function HomeScreen() {
   const { announce } = useAccessibility();
 
   const [isTranslating, setIsTranslating] = useState(false);
-  const [lastCapturedImage, setLastCapturedImage] = useState<CapturedFrame | null>(null);
-  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [translationText, setTranslationText] = useState("");
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [serverConnected, setServerConnected] = useState(false);
   const accumulatedWord = useRef("");
 
-  // Camera configuration context
   const {
     config,
     stats,
     startCapture,
     stopCapture,
-    pauseCapture,
-    resumeCapture,
     isCapturing,
-    isPaused,
     captureSingleImage,
     bufferSize,
   } = useCameraConfig();
 
-  // Load TTS preference from storage
-  useEffect(() => {
-    AsyncStorage.getItem("tts_enabled").then((value) => {
-      setTtsEnabled(value === null ? true : value === "true");
-    });
-  }, []);
+  const { ttsEnabled, announce, fontScale } = useAccessibility();
 
-  // Handle frame capture callback
-  const handleFrameCapture = async (frame: CapturedFrame) => {
-    // TODO: Send frame to ASL recognition model and get predictedLetter
-    const predictedLetter: string | null = null; // replace with model output
-
-    if (predictedLetter === null) {
-      console.log(
-        `Frame captured: ${frame.width}x${frame.height} at ${frame.timestamp}`
-      );
-      return;
-    }
-
-    if (predictedLetter === " ") {
-      const word = accumulatedWord.current.trim();
-      if (word.length > 0) {
-        if (ttsEnabled) {
-          ttsService.speakWord(word);
-        } else {
-          announce(word);
-        }
-      }
-      accumulatedWord.current = "";
+  // Called when the model recognizes a complete word (space received)
+  const finalizeWord = (word: string) => {
+    setTranslationText(word);
+    if (ttsEnabled) {
+      speakTranslation(word);
     } else {
-      accumulatedWord.current += predictedLetter;
+      announce(word);
+    }
+  };
+
+  const handleFrameCapture = async (frame: CapturedFrame) => {
+    const letter = await apiService.predictFrame(frame);
+    if (!letter) return;
+
+    if (letter === " ") {
+      // Space = word boundary: finalise the accumulated word, reset buffer
+      if (accumulatedWord.current.length > 0) {
+        finalizeWord(accumulatedWord.current);
+        accumulatedWord.current = "";
+      }
+    } else {
+      // Regular letter: append and update live display
+      accumulatedWord.current += letter;
+      setTranslationText(accumulatedWord.current);
     }
   };
 
   const handleSingleCapture = async () => {
     if (!cameraRef.current) {
-      Alert.alert("Camera Error", "Camera is not ready yet");
+      setSnackbarMessage("Camera is not ready yet");
+      setSnackbarVisible(true);
       return;
     }
 
-    const frame = await captureSingleImage();
-    if (frame) {
-      setLastCapturedImage(frame);
-      // TODO: Send to AI model
-      Alert.alert(
-        "Image Captured",
-        `Captured ${frame.resolution} image\nReady for AI processing`,
-        [{ text: "OK" }]
-      );
-    } else {
-      Alert.alert("Capture Failed", "Could not capture image");
+    try {
+      const frame = await captureSingleImage();
+      if (frame) {
+        setSnackbarMessage(`Captured ${frame.resolution} image — ready for AI processing`);
+        setSnackbarVisible(true);
+      } else {
+        setSnackbarMessage("Could not capture image");
+        setSnackbarVisible(true);
+      }
+    } catch (e) {
+      const err = errorService.classify(e);
+      errorService.log(err);
+      setSnackbarMessage(err.message);
+      setSnackbarVisible(true);
     }
   };
 
   const handleToggleTranslation = async () => {
     if (isTranslating) {
-      // Stop translation
       stopCapture();
+      apiService.disconnect();
       setIsTranslating(false);
+      setServerConnected(false);
       setDebugInfo("Translation stopped");
+      accumulatedWord.current = "";
       announce("Translation stopped");
     } else {
-      // Start translation
       if (!cameraRef.current) {
-        Alert.alert("Camera Error", "Camera is not ready yet");
+        setSnackbarMessage("Camera is not ready yet");
+        setSnackbarVisible(true);
         return;
       }
 
-      const started = await startCapture(cameraRef, handleFrameCapture);
-      if (started) {
-        setIsTranslating(true);
-        setDebugInfo("Translation active - capturing frames");
-        announce("Translation started");
-      } else {
-        Alert.alert(
-          "Capture Error",
-          "Failed to start frame capture. Please try again."
-        );
+      // Check backend before starting capture
+      const connected = await apiService.checkConnection();
+      setServerConnected(connected);
+      if (!connected) {
+        setSnackbarMessage("Cannot reach the ASL server. Make sure it is running.");
+        setSnackbarVisible(true);
+        return;
+      }
+
+      try {
+        const started = await startCapture(cameraRef, handleFrameCapture);
+        if (started) {
+          setIsTranslating(true);
+          setDebugInfo("Translation active - capturing frames");
+          announce("Translation started");
+        } else {
+          setSnackbarMessage("Failed to start frame capture. Please try again.");
+          setSnackbarVisible(true);
+        }
+      } catch (e) {
+        const err = errorService.classify(e);
+        errorService.log(err);
+        setSnackbarMessage(err.message);
+        setSnackbarVisible(true);
       }
     }
   };
@@ -186,15 +203,14 @@ export default function HomeScreen() {
             const result = await requestPermission();
             console.log("Permission result:", result);
             if (!result.granted) {
-              Alert.alert(
-                "Camera Permission Required",
-                "Please enable camera access in your device settings to use ASL translation.",
-                [{ text: "OK" }]
+              setSnackbarMessage(
+                "Please enable camera access in your device settings to use ASL translation."
               );
+              setSnackbarVisible(true);
             }
           }}
           style={{ borderRadius: borderRadius.lg }}
-          accessibilityLabel="Grant camera permission"
+          accessibilityLabel="Grant camera permission for ASL translation"
         >
           Grant Camera Permission
         </Button>
@@ -204,7 +220,6 @@ export default function HomeScreen() {
 
   const getSupportedRatios = async () => {
     try {
-      // For iOS compatibility, we'll use specific properties instead of ratios
       setDebugInfo("Camera initialized for iOS");
       console.log("Camera initialized with iOS compatibility settings");
     } catch (error) {
@@ -217,17 +232,13 @@ export default function HomeScreen() {
     const next = facing === "back" ? "front" : "back";
     setFacing(next);
     announce(`Camera switched to ${next}`);
-    // Reinitialize camera after facing change
     setTimeout(() => {
       getSupportedRatios();
     }, 100);
   }
 
-
-
   return (
     <View style={mainStyle.container}>
-
       <View style={cameraStyle.container}>
         {permission?.granted ? (
           <CameraView
@@ -246,10 +257,11 @@ export default function HomeScreen() {
             onMountError={(error: any) => {
               console.log("Camera mount error:", error);
               setDebugInfo(`Camera error: ${error}`);
-              Alert.alert(
-                "Camera Error",
-                "Failed to initialize camera. Please restart the app."
+              const err = errorService.classify(
+                new Error(`camera mount error: ${error}`)
               );
+              setSnackbarMessage(err.message);
+              setSnackbarVisible(true);
             }}
           />
         ) : (
@@ -292,6 +304,7 @@ export default function HomeScreen() {
             iconColor={theme.colors.primary}
             onPress={toggleCameraFacing}
             accessibilityLabel="Flip camera"
+            accessibilityLabel="Flip camera"
           />
         </Surface>
 
@@ -312,11 +325,30 @@ export default function HomeScreen() {
             variant="headlineSmall"
             style={[
               overlayStyle.text,
-              { color: theme.colors.onPrimaryContainer },
+              { color: theme.colors.onPrimaryContainer, fontSize: Math.round(18 * fontScale) },
             ]}
           >
             ASL Translation {isTranslating ? "Active" : "Ready"}
           </Text>
+
+          {/* Translation Output */}
+          <Text
+            variant="headlineLarge"
+            style={[
+              overlayStyle.translationOutput,
+              { color: theme.colors.onPrimaryContainer },
+            ]}
+            accessibilityLabel={
+              translationText
+                ? `Translated text: ${translationText}`
+                : isTranslating
+                ? "Translating"
+                : ""
+            }
+          >
+            {translationText || (isTranslating ? "..." : "")}
+          </Text>
+
           <Text
             variant="bodySmall"
             style={[
@@ -327,35 +359,32 @@ export default function HomeScreen() {
             {debugInfo}
           </Text>
 
+          {/* Server status, always visible when translation is toggled on */}
+          {isTranslating && (
+            <Chip
+              mode="flat"
+              compact
+              icon={serverConnected ? "check-circle" : "alert-circle"}
+              style={{ alignSelf: "center", marginBottom: spacing.xs }}
+              accessibilityLabel={serverConnected ? "Server connected" : "Server offline"}
+            >
+              {serverConnected ? "Server connected" : "Server offline"}
+            </Chip>
+          )}
+
           {/* Capture Stats */}
           {isCapturing && (
             <View style={overlayStyle.statsContainer}>
-              <Chip
-                mode="flat"
-                compact
-                style={{ marginHorizontal: spacing.xs }}
-              >
+              <Chip mode="flat" compact style={{ marginHorizontal: spacing.xs }}>
                 {stats.framesPerSecond} FPS
               </Chip>
-              <Chip
-                mode="flat"
-                compact
-                style={{ marginHorizontal: spacing.xs }}
-              >
+              <Chip mode="flat" compact style={{ marginHorizontal: spacing.xs }}>
                 {stats.totalFramesCaptured} frames
               </Chip>
-              <Chip
-                mode="flat"
-                compact
-                style={{ marginHorizontal: spacing.xs }}
-              >
+              <Chip mode="flat" compact style={{ marginHorizontal: spacing.xs }}>
                 Buffer: {bufferSize}
               </Chip>
-              <Chip
-                mode="flat"
-                compact
-                style={{ marginHorizontal: spacing.xs }}
-              >
+              <Chip mode="flat" compact style={{ marginHorizontal: spacing.xs }}>
                 {config.resolution}
               </Chip>
             </View>
@@ -371,7 +400,7 @@ export default function HomeScreen() {
               marginTop: spacing.md,
               borderRadius: borderRadius.lg,
             }}
-            accessibilityLabel="Capture single image"
+            accessibilityLabel="Capture single image for ASL translation"
           >
             Capture Single Image
           </Button>
@@ -398,6 +427,15 @@ export default function HomeScreen() {
           </Surface>
         )}
       </View>
+
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={4000}
+        action={{ label: "OK", onPress: () => setSnackbarVisible(false) }}
+      >
+        {snackbarMessage}
+      </Snackbar>
     </View>
   );
 }
@@ -417,7 +455,6 @@ const permissionButtonStyle = StyleSheet.create({
   },
   text: {
     textAlign: "center",
-    fontSize: 16,
   },
 });
 
@@ -454,8 +491,12 @@ const overlayStyle = StyleSheet.create({
     fontWeight: "bold",
     textAlign: "center",
   },
+  translationOutput: {
+    textAlign: "center",
+    marginTop: 8,
+    minHeight: 44,
+  },
   debugText: {
-    fontSize: 12,
     textAlign: "center",
     marginTop: 8,
   },
@@ -482,7 +523,6 @@ const loadingStyle = StyleSheet.create({
   },
   text: {
     color: "white",
-    fontSize: 16,
     fontWeight: "bold",
   },
 });

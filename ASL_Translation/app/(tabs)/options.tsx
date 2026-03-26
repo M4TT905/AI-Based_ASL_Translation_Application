@@ -12,8 +12,10 @@ import {
   Divider,
 } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { spacing, borderRadius, elevation } from "@/constants/paperTheme";
 import { useCameraConfig } from "@/contexts/CameraConfigContext";
+import { useAccessibility } from "@/contexts/AccessibilityContext";
 import { useAccessibility } from "@/contexts/AccessibilityContext";
 import { cameraConfigService } from "@/services/cameraConfigService";
 import {
@@ -30,26 +32,18 @@ export default function OptionsScreen() {
   const theme = useTheme();
   const { isHighContrast, setIsHighContrast, announce } = useAccessibility();
 
-  // Camera configuration context
   const { config, updateResolution, updateCaptureInterval, resetConfig } =
     useCameraConfig();
 
-  useEffect(() => {
-    AsyncStorage.getItem("tts_enabled").then((value) => {
-      setTtsEnabled(value === null ? true : value === "true");
-    });
-  }, []);
-
-  const handleTtsToggle = async (value: boolean) => {
-    setTtsEnabled(value);
-    await AsyncStorage.setItem("tts_enabled", String(value));
-    announce(value ? "Text to speech enabled" : "Text to speech disabled");
-  };
-
-  const handleHighContrastToggle = async (value: boolean) => {
-    await setIsHighContrast(value);
-    announce(value ? "High contrast enabled" : "High contrast disabled");
-  };
+  const {
+    isHighContrast,
+    setIsHighContrast,
+    ttsEnabled,
+    setTtsEnabled,
+    fontSize,
+    setFontSize,
+    announce,
+  } = useAccessibility();
 
   const handleResolutionChange = async () => {
     const resolutions = [
@@ -76,8 +70,27 @@ export default function OptionsScreen() {
     cameraConfigService.setMaxBufferSize(sizes[nextIndex]);
   };
 
-  const handleNotificationsToggle = () => {
-    setNotifications(!notifications);
+  const handleNotificationsToggle = async () => {
+    const next = !notifications;
+    setNotifications(next);
+    await AsyncStorage.setItem("notifications_enabled", String(next));
+  };
+
+  const handleTtsToggle = async (value: boolean) => {
+    await setTtsEnabled(value);
+    announce(value ? "Text to speech enabled" : "Text to speech disabled");
+  };
+
+  const handleHighContrastToggle = async (value: boolean) => {
+    await setIsHighContrast(value);
+    announce(value ? "High contrast enabled" : "High contrast disabled");
+  };
+
+  const FONT_SIZES = ["small", "medium", "large"] as const;
+  const handleFontSizeChange = async () => {
+    const next = FONT_SIZES[(FONT_SIZES.indexOf(fontSize) + 1) % 3];
+    await setFontSize(next);
+    announce(`Font size set to ${next}`);
   };
 
   const handleAbout = () => {
@@ -183,7 +196,7 @@ export default function OptionsScreen() {
                   mode="outlined"
                   onPress={handleResolutionChange}
                   style={{ borderRadius: borderRadius.md }}
-                  accessibilityLabel={`Change resolution, current: ${config.resolution}`}
+                  accessibilityLabel={`Resolution: ${config.resolution}. Tap to change`}
                 >
                   {config.resolution}
                 </Button>
@@ -201,7 +214,7 @@ export default function OptionsScreen() {
                   mode="outlined"
                   onPress={handleIntervalChange}
                   style={{ borderRadius: borderRadius.md }}
-                  accessibilityLabel={`Change capture interval, current: ${config.captureInterval}ms`}
+                  accessibilityLabel={`Capture interval: ${config.captureInterval}ms. Tap to change`}
                 >
                   {config.captureInterval}ms
                 </Button>
@@ -219,7 +232,7 @@ export default function OptionsScreen() {
                   mode="outlined"
                   onPress={handleBufferSizeChange}
                   style={{ borderRadius: borderRadius.md }}
-                  accessibilityLabel={`Change frame buffer size, current: ${bufferSize}`}
+                  accessibilityLabel={`Buffer size: ${bufferSize}. Tap to change`}
                 >
                   {bufferSize}
                 </Button>
@@ -233,12 +246,7 @@ export default function OptionsScreen() {
               mode="contained-tonal"
               onPress={handleTestCapture}
               icon="test-tube"
-              style={[
-                styles.resetButton,
-                {
-                  borderRadius: borderRadius.lg,
-                },
-              ]}
+              style={[styles.resetButton, { borderRadius: borderRadius.lg }]}
               accessibilityLabel="View current camera configuration"
             >
               View Configuration
@@ -268,6 +276,7 @@ export default function OptionsScreen() {
             <List.Item
               title="Notifications"
               description="Receive translation alerts"
+              accessibilityLabel={`Notifications ${notifications ? "enabled" : "disabled"}`}
               right={() => (
                 <Switch
                   value={notifications}
@@ -279,7 +288,7 @@ export default function OptionsScreen() {
                     false: theme.colors.surfaceVariant,
                     true: theme.colors.primaryContainer,
                   }}
-                  accessibilityLabel={`Notifications ${notifications ? "on" : "off"}`}
+                  accessibilityLabel="Toggle notifications"
                 />
               )}
               style={styles.listItem}
@@ -290,6 +299,7 @@ export default function OptionsScreen() {
             <List.Item
               title="Text-to-Speech"
               description="Speak translated words aloud"
+              accessibilityLabel={`Text-to-speech ${ttsEnabled ? "enabled" : "disabled"}`}
               right={() => (
                 <Switch
                   value={ttsEnabled}
@@ -301,7 +311,7 @@ export default function OptionsScreen() {
                     false: theme.colors.surfaceVariant,
                     true: theme.colors.primaryContainer,
                   }}
-                  accessibilityLabel={`Text to speech ${ttsEnabled ? "on" : "off"}`}
+                  accessibilityLabel="Toggle text-to-speech"
                 />
               )}
               style={styles.listItem}
@@ -311,8 +321,8 @@ export default function OptionsScreen() {
 
             <List.Item
               title="High Contrast"
-              description="Increase text and UI contrast"
-              accessibilityLabel={`High contrast ${isHighContrast ? "on" : "off"}`}
+              description="Increase visual contrast for accessibility"
+              accessibilityLabel={`High contrast ${isHighContrast ? "enabled" : "disabled"}`}
               right={() => (
                 <Switch
                   value={isHighContrast}
@@ -326,6 +336,25 @@ export default function OptionsScreen() {
                   }}
                   accessibilityLabel="Toggle high contrast mode"
                 />
+              )}
+              style={styles.listItem}
+            />
+
+            <Divider style={{ marginVertical: spacing.sm }} />
+
+            <List.Item
+              title="Font Size"
+              description={`Current: ${fontSize.charAt(0).toUpperCase() + fontSize.slice(1)}`}
+              accessibilityLabel={`Font size: ${fontSize}. Tap to change`}
+              right={() => (
+                <Button
+                  mode="outlined"
+                  onPress={handleFontSizeChange}
+                  style={{ borderRadius: borderRadius.md }}
+                  accessibilityLabel={`Font size: ${fontSize}. Tap to cycle`}
+                >
+                  {fontSize.charAt(0).toUpperCase() + fontSize.slice(1)}
+                </Button>
               )}
               style={styles.listItem}
             />
@@ -363,6 +392,7 @@ export default function OptionsScreen() {
                 />
               )}
               onPress={handleHelp}
+              accessibilityLabel="Help and support"
               style={styles.listItem}
             />
 
@@ -380,6 +410,7 @@ export default function OptionsScreen() {
                 />
               )}
               onPress={handleAbout}
+              accessibilityLabel="About this app"
               style={styles.listItem}
             />
           </Card.Content>
@@ -416,7 +447,7 @@ export default function OptionsScreen() {
                 },
               ]}
               textColor={theme.colors.error}
-              accessibilityLabel="Reset all settings to default"
+              accessibilityLabel="Reset all settings to defaults"
             >
               Reset All Settings
             </Button>
