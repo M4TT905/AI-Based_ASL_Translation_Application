@@ -9,7 +9,6 @@ import {
   lightTheme,
   darkTheme,
   highContrastTheme,
-  highContrastTheme,
   NavigationLightTheme,
   NavigationDarkTheme,
 } from "@/constants/paperTheme";

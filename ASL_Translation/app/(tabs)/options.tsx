@@ -12,10 +12,8 @@ import {
   Divider,
 } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { spacing, borderRadius, elevation } from "@/constants/paperTheme";
 import { useCameraConfig } from "@/contexts/CameraConfigContext";
-import { useAccessibility } from "@/contexts/AccessibilityContext";
 import { useAccessibility } from "@/contexts/AccessibilityContext";
 import { cameraConfigService } from "@/services/cameraConfigService";
 import {
@@ -27,10 +25,8 @@ import {
 export default function OptionsScreen() {
   const [notifications, setNotifications] = useState(true);
   const [bufferSize, setBufferSize] = useState(30);
-  const [ttsEnabled, setTtsEnabled] = useState(true);
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const { isHighContrast, setIsHighContrast, announce } = useAccessibility();
 
   const { config, updateResolution, updateCaptureInterval, resetConfig } =
     useCameraConfig();

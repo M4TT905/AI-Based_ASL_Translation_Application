@@ -295,13 +295,14 @@ class CameraConfigService {
 
       // Update stats
       this.stats.totalFramesCaptured++;
+      const prevTimestamp = this.stats.lastCaptureTimestamp;
       this.stats.lastCaptureTimestamp = captureEndTime;
       this.stats.averageCaptureTime =
         this.captureTimings.reduce((a, b) => a + b, 0) /
         this.captureTimings.length;
 
-      // Calculate FPS based on actual interval
-      const actualInterval = this.config.captureInterval + captureTime;
+      // Calculate FPS from actual elapsed time between frames
+      const actualInterval = prevTimestamp > 0 ? captureEndTime - prevTimestamp : this.config.captureInterval;
       this.stats.framesPerSecond = Math.round(1000 / actualInterval);
 
       // Create captured frame object

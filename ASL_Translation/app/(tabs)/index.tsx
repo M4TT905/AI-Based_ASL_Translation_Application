@@ -32,8 +32,6 @@ export default function HomeScreen() {
   const cameraRef = useRef<CameraView>(null);
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const { announce } = useAccessibility();
-
   const [isTranslating, setIsTranslating] = useState(false);
   const [translationText, setTranslationText] = useState("");
   const [snackbarVisible, setSnackbarVisible] = useState(false);
@@ -218,23 +216,10 @@ export default function HomeScreen() {
     );
   }
 
-  const getSupportedRatios = async () => {
-    try {
-      setDebugInfo("Camera initialized for iOS");
-      console.log("Camera initialized with iOS compatibility settings");
-    } catch (error) {
-      console.log("Error initializing camera:", error);
-      setDebugInfo("Error initializing camera");
-    }
-  };
-
   function toggleCameraFacing() {
     const next = facing === "back" ? "front" : "back";
     setFacing(next);
     announce(`Camera switched to ${next}`);
-    setTimeout(() => {
-      getSupportedRatios();
-    }, 100);
   }
 
   return (
@@ -248,11 +233,10 @@ export default function HomeScreen() {
             mode="picture"
             mirror={false}
             animateShutter={false}
-            onCameraReady={async () => {
+            onCameraReady={() => {
               console.log("Camera is ready!");
               setIsReady(true);
               setDebugInfo("Camera ready and streaming");
-              await getSupportedRatios();
             }}
             onMountError={(error: any) => {
               console.log("Camera mount error:", error);
@@ -303,7 +287,6 @@ export default function HomeScreen() {
             size={24}
             iconColor={theme.colors.primary}
             onPress={toggleCameraFacing}
-            accessibilityLabel="Flip camera"
             accessibilityLabel="Flip camera"
           />
         </Surface>
