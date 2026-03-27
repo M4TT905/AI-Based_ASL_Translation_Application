@@ -10,10 +10,10 @@ import {
   Snackbar,
 } from "react-native-paper";
 import { CameraView, CameraType, useCameraPermissions } from "expo-camera";
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
 import { spacing, borderRadius, elevation } from "@/constants/paperTheme";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { TranslationToggleButton } from "@/components/ui/TranslationToggleButton";
 import { useCameraConfig } from "@/contexts/CameraConfigContext";
@@ -22,13 +22,14 @@ import { speakWord as speakTranslation } from "@/services/ttsService";
 import { errorService } from "@/services/errorService";
 import { apiService } from "@/services/apiService";
 import { CapturedFrame } from "@/types/camera";
-import * as ttsService from "@/services/ttsService";
+
+// How long (ms) with no hand detected before the accumulated text is finalized + cleared
+const NO_HAND_TIMEOUT_MS = 5000;
 
 export default function HomeScreen() {
   const [facing, setFacing] = useState<CameraType>("back");
   const [permission, requestPermission] = useCameraPermissions();
   const [isReady, setIsReady] = useState(false);
-  const [debugInfo, setDebugInfo] = useState("Initializing...");
   const cameraRef = useRef<CameraView>(null);
   const insets = useSafeAreaInsets();
   const theme = useTheme();
@@ -37,21 +38,14 @@ export default function HomeScreen() {
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
   const [serverConnected, setServerConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const accumulatedWord = useRef("");
+  const noHandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const {
-    config,
-    stats,
-    startCapture,
-    stopCapture,
-    isCapturing,
-    captureSingleImage,
-    bufferSize,
-  } = useCameraConfig();
+  const { startCapture, stopCapture } = useCameraConfig();
 
   const { ttsEnabled, announce, fontScale } = useAccessibility();
 
-  // Called when the model recognizes a complete word (space received)
   const finalizeWord = (word: string) => {
     setTranslationText(word);
     if (ttsEnabled) {
@@ -61,55 +55,57 @@ export default function HomeScreen() {
     }
   };
 
+  const clearAccumulator = () => {
+    if (noHandTimerRef.current) {
+      clearTimeout(noHandTimerRef.current);
+      noHandTimerRef.current = null;
+    }
+    accumulatedWord.current = "";
+    setTranslationText("");
+  };
+
   const handleFrameCapture = async (frame: CapturedFrame) => {
     const letter = await apiService.predictFrame(frame);
-    if (!letter) return;
+
+    if (!letter) {
+      // Start the no-hand timer only if there's accumulated text to finalize
+      if (!noHandTimerRef.current && accumulatedWord.current.length > 0) {
+        noHandTimerRef.current = setTimeout(() => {
+          if (accumulatedWord.current.length > 0) {
+            finalizeWord(accumulatedWord.current);
+            accumulatedWord.current = "";
+          }
+          noHandTimerRef.current = null;
+        }, NO_HAND_TIMEOUT_MS);
+      }
+      return;
+    }
+
+    // Hand is back — cancel any pending finalize timer
+    if (noHandTimerRef.current) {
+      clearTimeout(noHandTimerRef.current);
+      noHandTimerRef.current = null;
+    }
 
     if (letter === " ") {
-      // Space = word boundary: finalise the accumulated word, reset buffer
       if (accumulatedWord.current.length > 0) {
         finalizeWord(accumulatedWord.current);
         accumulatedWord.current = "";
       }
     } else {
-      // Regular letter: append and update live display
       accumulatedWord.current += letter;
       setTranslationText(accumulatedWord.current);
     }
   };
 
-  const handleSingleCapture = async () => {
-    if (!cameraRef.current) {
-      setSnackbarMessage("Camera is not ready yet");
-      setSnackbarVisible(true);
-      return;
-    }
-
-    try {
-      const frame = await captureSingleImage();
-      if (frame) {
-        setSnackbarMessage(`Captured ${frame.resolution} image — ready for AI processing`);
-        setSnackbarVisible(true);
-      } else {
-        setSnackbarMessage("Could not capture image");
-        setSnackbarVisible(true);
-      }
-    } catch (e) {
-      const err = errorService.classify(e);
-      errorService.log(err);
-      setSnackbarMessage(err.message);
-      setSnackbarVisible(true);
-    }
-  };
-
   const handleToggleTranslation = async () => {
     if (isTranslating) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       stopCapture();
       apiService.disconnect();
       setIsTranslating(false);
       setServerConnected(false);
-      setDebugInfo("Translation stopped");
-      accumulatedWord.current = "";
+      clearAccumulator();
       announce("Translation stopped");
     } else {
       if (!cameraRef.current) {
@@ -118,10 +114,15 @@ export default function HomeScreen() {
         return;
       }
 
-      // Check backend before starting capture
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setIsConnecting(true);
+
       const connected = await apiService.checkConnection();
       setServerConnected(connected);
+      setIsConnecting(false);
+
       if (!connected) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         setSnackbarMessage("Cannot reach the ASL server. Make sure it is running.");
         setSnackbarVisible(true);
         return;
@@ -131,7 +132,6 @@ export default function HomeScreen() {
         const started = await startCapture(cameraRef, handleFrameCapture);
         if (started) {
           setIsTranslating(true);
-          setDebugInfo("Translation active - capturing frames");
           announce("Translation started");
         } else {
           setSnackbarMessage("Failed to start frame capture. Please try again.");
@@ -145,18 +145,6 @@ export default function HomeScreen() {
       }
     }
   };
-
-  useEffect(() => {
-    console.log("Camera permission status:", permission);
-    if (permission?.granted) {
-      setIsReady(true);
-      setDebugInfo("Permission granted, camera should load");
-    } else if (permission === null) {
-      setDebugInfo("Checking permissions...");
-    } else {
-      setDebugInfo("Permission denied");
-    }
-  }, [permission]);
 
   if (!permission) {
     return (
@@ -196,17 +184,7 @@ export default function HomeScreen() {
         </Text>
         <Button
           mode="contained"
-          onPress={async () => {
-            console.log("Requesting camera permission...");
-            const result = await requestPermission();
-            console.log("Permission result:", result);
-            if (!result.granted) {
-              setSnackbarMessage(
-                "Please enable camera access in your device settings to use ASL translation."
-              );
-              setSnackbarVisible(true);
-            }
-          }}
+          onPress={requestPermission}
           style={{ borderRadius: borderRadius.lg }}
           accessibilityLabel="Grant camera permission for ASL translation"
         >
@@ -233,14 +211,8 @@ export default function HomeScreen() {
             mode="picture"
             mirror={false}
             animateShutter={false}
-            onCameraReady={() => {
-              console.log("Camera is ready!");
-              setIsReady(true);
-              setDebugInfo("Camera ready and streaming");
-            }}
+            onCameraReady={() => setIsReady(true)}
             onMountError={(error: any) => {
-              console.log("Camera mount error:", error);
-              setDebugInfo(`Camera error: ${error}`);
               const err = errorService.classify(
                 new Error(`camera mount error: ${error}`)
               );
@@ -269,7 +241,7 @@ export default function HomeScreen() {
           </Surface>
         )}
 
-        {/* Camera Toggle Button */}
+        {/* Camera flip button */}
         <Surface
           style={[
             toggleButtonStyle.container,
@@ -291,119 +263,96 @@ export default function HomeScreen() {
           />
         </Surface>
 
-        {/* Translation Overlay */}
+        {/* Translation overlay */}
         <Surface
           style={[
             overlayStyle.container,
             {
               backgroundColor: theme.colors.primaryContainer,
-              bottom: insets.bottom,
+              bottom: 0,
+              paddingBottom: insets.bottom + spacing.md,
               borderTopLeftRadius: borderRadius.lg,
               borderTopRightRadius: borderRadius.lg,
             },
           ]}
           elevation={elevation.level2}
         >
-          <Text
-            variant="headlineSmall"
-            style={[
-              overlayStyle.text,
-              { color: theme.colors.onPrimaryContainer, fontSize: Math.round(18 * fontScale) },
-            ]}
-          >
-            ASL Translation {isTranslating ? "Active" : "Ready"}
-          </Text>
-
-          {/* Translation Output */}
-          <Text
-            variant="headlineLarge"
-            style={[
-              overlayStyle.translationOutput,
-              { color: theme.colors.onPrimaryContainer },
-            ]}
-            accessibilityLabel={
-              translationText
-                ? `Translated text: ${translationText}`
-                : isTranslating
-                ? "Translating"
-                : ""
-            }
-          >
-            {translationText || (isTranslating ? "..." : "")}
-          </Text>
-
-          <Text
-            variant="bodySmall"
-            style={[
-              overlayStyle.debugText,
-              { color: theme.colors.onPrimaryContainer },
-            ]}
-          >
-            {debugInfo}
-          </Text>
-
-          {/* Server status, always visible when translation is toggled on */}
-          {isTranslating && (
-            <Chip
-              mode="flat"
-              compact
-              icon={serverConnected ? "check-circle" : "alert-circle"}
-              style={{ alignSelf: "center", marginBottom: spacing.xs }}
-              accessibilityLabel={serverConnected ? "Server connected" : "Server offline"}
+          {/* Status row */}
+          <View style={overlayStyle.statusRow}>
+            <Text
+              variant="titleMedium"
+              style={[overlayStyle.statusText, { color: theme.colors.onPrimaryContainer, fontSize: Math.round(16 * fontScale) }]}
             >
-              {serverConnected ? "Server connected" : "Server offline"}
-            </Chip>
-          )}
+              ASL Translation {isTranslating ? "Active" : "Ready"}
+            </Text>
 
-          {/* Capture Stats */}
-          {isCapturing && (
-            <View style={overlayStyle.statsContainer}>
-              <Chip mode="flat" compact style={{ marginHorizontal: spacing.xs }}>
-                {stats.framesPerSecond} FPS
+            {isTranslating && (
+              <Chip
+                mode="flat"
+                compact
+                icon={serverConnected ? "check-circle" : "alert-circle"}
+                accessibilityLabel={serverConnected ? "Server connected" : "Server offline"}
+              >
+                {serverConnected ? "Connected" : "Offline"}
               </Chip>
-              <Chip mode="flat" compact style={{ marginHorizontal: spacing.xs }}>
-                {stats.totalFramesCaptured} frames
-              </Chip>
-              <Chip mode="flat" compact style={{ marginHorizontal: spacing.xs }}>
-                Buffer: {bufferSize}
-              </Chip>
-              <Chip mode="flat" compact style={{ marginHorizontal: spacing.xs }}>
-                {config.resolution}
-              </Chip>
-            </View>
-          )}
+            )}
+          </View>
 
-          {/* Single Capture Button */}
-          <Button
-            mode="contained"
-            icon="camera"
-            onPress={handleSingleCapture}
-            disabled={isCapturing}
-            style={{
-              marginTop: spacing.md,
-              borderRadius: borderRadius.lg,
-            }}
-            accessibilityLabel="Capture single image for ASL translation"
-          >
-            Capture Single Image
-          </Button>
+          {/* Translation output */}
+          <View style={overlayStyle.outputRow}>
+            {isTranslating && translationText === "" ? (
+              <ActivityIndicator
+                size="small"
+                color={theme.colors.onPrimaryContainer}
+                style={overlayStyle.translationSpinner}
+                accessibilityLabel="Translating"
+              />
+            ) : (
+              <Text
+                variant="headlineLarge"
+                style={[
+                  overlayStyle.translationOutput,
+                  { color: theme.colors.onPrimaryContainer, fontSize: Math.round(36 * fontScale) },
+                ]}
+                numberOfLines={2}
+                adjustsFontSizeToFit
+                accessibilityLabel={
+                  translationText ? `Translated text: ${translationText}` : ""
+                }
+              >
+                {translationText}
+              </Text>
+            )}
+
+            {translationText.length > 0 && (
+              <IconButton
+                icon="close-circle"
+                size={28}
+                iconColor={theme.colors.onPrimaryContainer}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  clearAccumulator();
+                }}
+                accessibilityLabel="Clear translation"
+                style={overlayStyle.clearButton}
+              />
+            )}
+          </View>
 
           <TranslationToggleButton
             isTranslating={isTranslating}
+            isConnecting={isConnecting}
             onToggle={handleToggleTranslation}
           />
         </Surface>
 
-        {/* Loading Indicator */}
+        {/* Camera loading indicator */}
         {!isReady && (
           <Surface style={loadingStyle.container} elevation={0}>
             <ActivityIndicator size="large" color={theme.colors.primary} />
             <Text
               variant="bodyLarge"
-              style={[
-                loadingStyle.text,
-                { color: theme.colors.onSurface, marginTop: spacing.sm },
-              ]}
+              style={[loadingStyle.text, { marginTop: spacing.sm }]}
             >
               Initializing Camera...
             </Text>
@@ -467,29 +416,34 @@ const overlayStyle = StyleSheet.create({
     position: "absolute",
     padding: 20,
     width: "100%",
-    minHeight: "25%",
+    minHeight: "22%",
   },
-  text: {
-    fontSize: 18,
+  statusRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.sm,
+  },
+  statusText: {
     fontWeight: "bold",
-    textAlign: "center",
+  },
+  outputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 60,
+    marginBottom: spacing.md,
   },
   translationOutput: {
+    flex: 1,
     textAlign: "center",
-    marginTop: 8,
-    minHeight: 44,
+    fontWeight: "bold",
   },
-  debugText: {
-    textAlign: "center",
-    marginTop: 8,
+  translationSpinner: {
+    flex: 1,
   },
-  statsContainer: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 12,
-    marginBottom: 8,
-    flexWrap: "wrap",
+  clearButton: {
+    margin: 0,
   },
 });
 
