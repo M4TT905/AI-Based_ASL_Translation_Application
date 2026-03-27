@@ -1,4 +1,17 @@
 # server.py
+#
+# IMPORTANT — run this server from inside ASL_Backend_Server/, not the repo root:
+#   cd ASL_Backend_Server
+#   uvicorn server:app --host 0.0.0.0 --port 8000
+#
+# The Keras model and hand_landmarker.task are loaded with paths relative
+# to this directory. Running from the wrong directory causes a FileNotFoundError
+# on startup.
+#
+# For ngrok (demo day): run ngrok in a separate terminal after starting the server:
+#   ngrok http 8000
+# Then update API_BASE_URL in ASL_Translation/config/api.ts with the ngrok URL.
+
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
