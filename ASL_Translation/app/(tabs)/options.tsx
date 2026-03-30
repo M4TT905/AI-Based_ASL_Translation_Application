@@ -28,6 +28,13 @@ export default function OptionsScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
 
+  useEffect(() => {
+    AsyncStorage.getItem("notifications_enabled").then((val) => {
+      if (val !== null) setNotifications(val === "true");
+    });
+    setBufferSize(cameraConfigService.getMaxBufferSize());
+  }, []);
+
   const { config, updateResolution, updateCaptureInterval, resetConfig } =
     useCameraConfig();
 

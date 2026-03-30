@@ -1,4 +1,11 @@
 import { StyleSheet, View } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  Easing,
+} from "react-native-reanimated";
 import {
   Text,
   Button,
@@ -10,7 +17,7 @@ import {
   Snackbar,
 } from "react-native-paper";
 import { CameraView, CameraType, useCameraPermissions } from "expo-camera";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { spacing, borderRadius, elevation } from "@/constants/paperTheme";
@@ -41,6 +48,23 @@ export default function HomeScreen() {
   const [isConnecting, setIsConnecting] = useState(false);
   const accumulatedWord = useRef("");
   const noHandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const shimmerOpacity = useSharedValue(1);
+  const shimmerStyle = useAnimatedStyle(() => ({
+    opacity: shimmerOpacity.value,
+  }));
+
+  useEffect(() => {
+    if (isTranslating) {
+      shimmerOpacity.value = withRepeat(
+        withTiming(0.25, { duration: 900, easing: Easing.inOut(Easing.ease) }),
+        -1,
+        true
+      );
+    } else {
+      shimmerOpacity.value = withTiming(1, { duration: 200 });
+    }
+  }, [isTranslating]);
 
   const { startCapture, stopCapture } = useCameraConfig();
 
@@ -301,12 +325,15 @@ export default function HomeScreen() {
           {/* Translation output */}
           <View style={overlayStyle.outputRow}>
             {isTranslating && translationText === "" ? (
-              <ActivityIndicator
-                size="small"
-                color={theme.colors.onPrimaryContainer}
-                style={overlayStyle.translationSpinner}
-                accessibilityLabel="Translating"
-              />
+              <Animated.View style={[overlayStyle.waitingContainer, shimmerStyle]}>
+                <Text
+                  variant="bodyMedium"
+                  style={[overlayStyle.waitingText, { color: theme.colors.onPrimaryContainer }]}
+                  accessibilityLabel="Waiting for hand in camera"
+                >
+                  Show hand in camera...
+                </Text>
+              </Animated.View>
             ) : (
               <Text
                 variant="headlineLarge"
@@ -439,8 +466,13 @@ const overlayStyle = StyleSheet.create({
     textAlign: "center",
     fontWeight: "bold",
   },
-  translationSpinner: {
+  waitingContainer: {
     flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  waitingText: {
+    textAlign: "center",
   },
   clearButton: {
     margin: 0,

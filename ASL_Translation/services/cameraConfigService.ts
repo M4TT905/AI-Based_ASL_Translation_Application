@@ -366,6 +366,13 @@ class CameraConfigService {
   }
 
   /**
+   * Get maximum buffer size
+   */
+  public getMaxBufferSize(): number {
+    return this.maxBufferSize;
+  }
+
+  /**
    * Set maximum buffer size
    */
   public setMaxBufferSize(size: number): void {
