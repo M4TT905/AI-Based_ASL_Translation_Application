@@ -20,8 +20,11 @@ import numpy as np
 from PIL import Image
 import io
 import mediapipe as mp
+from collections import deque
 
 model = load_model("../ASL_MediaPipe_Refined/refined_checkpoint_for_new_keypoint_collection.keras")
+
+keypoints_buffer = deque(maxlen=30)
 
 app = FastAPI()
 
@@ -80,13 +83,23 @@ async def translate_image(file: UploadFile = File(...)):
 
         keypoints = get_flattened_keypoints(result)
         if keypoints is None:
-            return JSONResponse({"translation": None, "confidence": 0.0})
+            keypoints_buffer.clear()
+            return JSONResponse({"translation": None, "confidence": 0.0, "buffer_frames": 0})
 
-        keypoints = np.expand_dims(keypoints, 0)   # (1, 126)
-        keypoints = np.expand_dims(keypoints, 1)   # (1, 1, 126)
-        keypoints = np.repeat(keypoints, 30, axis=1)  # (1, 30, 126)
+        keypoints_buffer.append(keypoints)
+        n = len(keypoints_buffer)
 
-        prediction = model.predict(keypoints)
+        if n == 30:
+            # Real 30-frame temporal sequence
+            sequence = np.array(keypoints_buffer)          # (30, 126)
+            sequence = np.expand_dims(sequence, 0)         # (1, 30, 126)
+        else:
+            # Buffer warming up — fall back to repeat so we still return predictions
+            kp = np.expand_dims(keypoints, 0)              # (1, 126)
+            kp = np.expand_dims(kp, 1)                     # (1, 1, 126)
+            sequence = np.repeat(kp, 30, axis=1)           # (1, 30, 126)
+
+        prediction = model.predict(sequence)
         pred_class = int(np.argmax(prediction, axis=1)[0])
         confidence = float(np.max(prediction))
 
@@ -94,8 +107,8 @@ async def translate_image(file: UploadFile = File(...)):
             return JSONResponse({"translation": None, "confidence": 0.0})
 
         translated = classes[pred_class]
-        print(translated, confidence)
-        return JSONResponse({"translation": translated, "confidence": confidence})
+        print(translated, confidence, f"({n}/30 frames)")
+        return JSONResponse({"translation": translated, "confidence": confidence, "buffer_frames": n})
 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
