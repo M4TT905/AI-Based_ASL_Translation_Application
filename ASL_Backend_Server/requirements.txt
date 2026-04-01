@@ -1,0 +1,23 @@
+# ASL Backend Server — Python dependencies
+#
+# Install with:
+#   pip install -r requirements.txt
+#
+# IMPORTANT: Run the server from inside ASL_Backend_Server/, not the repo root.
+#   cd ASL_Backend_Server
+#   uvicorn server:app --host 0.0.0.0 --port 8000
+#
+# The model path in server.py is relative to this directory.
+
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+
+# Required by FastAPI for file upload (UploadFile / File(...)) — do NOT omit
+python-multipart>=0.0.6
+
+tensorflow>=2.12.0
+mediapipe>=0.10.0
+Pillow>=9.0.0
+
+# numpy <2.0 required — TensorFlow 2.x is not compatible with numpy 2.0+
+numpy>=1.23.0,<2.0.0

@@ -1,0 +1,3 @@
+cd Logs\train
+tensorboard --logdir=.
+

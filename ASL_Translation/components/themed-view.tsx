@@ -1,14 +1,31 @@
-import { View, type ViewProps } from 'react-native';
-
-import { useThemeColor } from '@/hooks/use-theme-color';
+import { type ViewProps } from "react-native";
+import { Surface, useTheme } from "react-native-paper";
 
 export type ThemedViewProps = ViewProps & {
   lightColor?: string;
   darkColor?: string;
+  elevation?: 0 | 1 | 2 | 3 | 4 | 5;
+  children?: React.ReactNode;
 };
 
-export function ThemedView({ style, lightColor, darkColor, ...otherProps }: ThemedViewProps) {
-  const backgroundColor = useThemeColor({ light: lightColor, dark: darkColor }, 'background');
+export function ThemedView({
+  style,
+  lightColor,
+  darkColor,
+  elevation = 0,
+  children,
+  ...otherProps
+}: ThemedViewProps) {
+  const theme = useTheme();
+  const backgroundColor = lightColor || darkColor || theme.colors.surface;
 
-  return <View style={[{ backgroundColor }, style]} {...otherProps} />;
+  return (
+    <Surface
+      style={[{ backgroundColor }, style]}
+      elevation={elevation}
+      {...otherProps}
+    >
+      {children}
+    </Surface>
+  );
 }
