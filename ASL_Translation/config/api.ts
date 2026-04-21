@@ -9,6 +9,7 @@
 
 // Backend host swap this when using a live server address
 export const API_BASE_URL = "http://localhost:8000";
+//export const API_BASE_URL = "https://damaris-oily-unflinchingly.ngrok-free.dev";
 
 // Endpoint to call for a single-frame prediction.
 export const PREDICT_ENDPOINT = "/translate/";

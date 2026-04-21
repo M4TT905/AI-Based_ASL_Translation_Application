@@ -2,7 +2,7 @@ import * as Speech from "expo-speech";
 
 export function speakWord(word: string): void {
   Speech.stop();
-  Speech.speak(word, { rate: 0.9 });
+  Speech.speak(word, { rate: 0.9});
 }
 
 export function stop(): void {

@@ -66,6 +66,9 @@ async function realPredict(frame: CapturedFrame): Promise<string | null> {
       method: "POST",
       body: formData,
       signal: controller.signal,
+      headers: {
+          "ngrok-skip-browser-warning": "true",
+        },
     });
 
     if (!response.ok) {

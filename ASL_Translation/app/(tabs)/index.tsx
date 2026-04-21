@@ -49,6 +49,15 @@ export default function HomeScreen() {
   const accumulatedWord = useRef("");
   const noHandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Debounce: require same letter N frames in a row before accepting,
+  // then cooldown before same letter can fire again.
+  const STABILITY_FRAMES  = 3;      // consecutive same-letter frames needed
+  const SAME_LETTER_COOLDOWN_MS = 1200; // ms before same letter accepted again
+  const pendingLetter   = useRef<string | null>(null);
+  const pendingCount    = useRef(0);
+  const lastEmittedLetter = useRef<string | null>(null);
+  const lastEmittedTime   = useRef(0);
+
   const shimmerOpacity = useSharedValue(1);
   const shimmerStyle = useAnimatedStyle(() => ({
     opacity: shimmerOpacity.value,
@@ -88,28 +97,9 @@ export default function HomeScreen() {
     setTranslationText("");
   };
 
-  const handleFrameCapture = async (frame: CapturedFrame) => {
-    const letter = await apiService.predictFrame(frame);
-
-    if (!letter) {
-      // Start the no-hand timer only if there's accumulated text to finalize
-      if (!noHandTimerRef.current && accumulatedWord.current.length > 0) {
-        noHandTimerRef.current = setTimeout(() => {
-          if (accumulatedWord.current.length > 0) {
-            finalizeWord(accumulatedWord.current);
-            accumulatedWord.current = "";
-          }
-          noHandTimerRef.current = null;
-        }, NO_HAND_TIMEOUT_MS);
-      }
-      return;
-    }
-
-    // Hand is back — cancel any pending finalize timer
-    if (noHandTimerRef.current) {
-      clearTimeout(noHandTimerRef.current);
-      noHandTimerRef.current = null;
-    }
+  const emitLetter = (letter: string) => {
+    lastEmittedLetter.current = letter;
+    lastEmittedTime.current   = Date.now();
 
     if (letter === " ") {
       if (accumulatedWord.current.length > 0) {
@@ -122,6 +112,54 @@ export default function HomeScreen() {
     }
   };
 
+  const handleFrameCapture = async (frame: CapturedFrame) => {
+    const letter = await apiService.predictFrame(frame);
+
+    if (!letter) {
+      // Reset stability buffer — hand gone
+      pendingLetter.current = null;
+      pendingCount.current  = 0;
+
+      if (!noHandTimerRef.current && accumulatedWord.current.length > 0) {
+        noHandTimerRef.current = setTimeout(() => {
+          if (accumulatedWord.current.length > 0) {
+            finalizeWord(accumulatedWord.current);
+            accumulatedWord.current = "";
+          }
+          noHandTimerRef.current = null;
+        }, NO_HAND_TIMEOUT_MS);
+      }
+      return;
+    }
+
+    // Hand is back — cancel finalize timer
+    if (noHandTimerRef.current) {
+      clearTimeout(noHandTimerRef.current);
+      noHandTimerRef.current = null;
+    }
+
+    // Stability check: accumulate consecutive same-letter frames
+    if (letter === pendingLetter.current) {
+      pendingCount.current += 1;
+    } else {
+      pendingLetter.current = letter;
+      pendingCount.current  = 1;
+    }
+
+    if (pendingCount.current < STABILITY_FRAMES) return;
+
+    // Same-letter cooldown: prevent double-firing same letter
+    const now = Date.now();
+    if (
+      letter === lastEmittedLetter.current &&
+      now - lastEmittedTime.current < SAME_LETTER_COOLDOWN_MS
+    ) return;
+
+    // Stable new letter — emit it and reset
+    pendingCount.current = 0;
+    emitLetter(letter);
+  };
+
   const handleToggleTranslation = async () => {
     if (isTranslating) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -130,6 +168,10 @@ export default function HomeScreen() {
       setIsTranslating(false);
       setServerConnected(false);
       clearAccumulator();
+      pendingLetter.current     = null;
+      pendingCount.current      = 0;
+      lastEmittedLetter.current = null;
+      lastEmittedTime.current   = 0;
       announce("Translation stopped");
     } else {
       if (!cameraRef.current) {

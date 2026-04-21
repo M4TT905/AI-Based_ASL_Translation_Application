@@ -42,6 +42,9 @@ class ApiService {
       const response = await fetch(`${API_BASE_URL}${HEALTH_ENDPOINT}`, {
         method: "GET",
         signal: controller.signal,
+        headers: {
+          "ngrok-skip-browser-warning": "true",
+        },
       });
       this._isConnected = response.ok;
     } catch {
