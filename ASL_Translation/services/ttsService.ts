@@ -1,8 +1,8 @@
 import * as Speech from "expo-speech";
 
-export function speakWord(word: string): void {
+export function speakWord(word: string, onDone?: () => void): void {
   Speech.stop();
-  Speech.speak(word, { rate: 0.9});
+  Speech.speak(word, { language: "en-US", rate: 0.9, onDone });
 }
 
 export function stop(): void {

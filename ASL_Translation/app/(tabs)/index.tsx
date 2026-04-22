@@ -3,7 +3,9 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
+  withSequence,
   withTiming,
+  cancelAnimation,
   Easing,
 } from "react-native-reanimated";
 import {
@@ -25,13 +27,12 @@ import { spacing, borderRadius, elevation } from "@/constants/paperTheme";
 import { TranslationToggleButton } from "@/components/ui/TranslationToggleButton";
 import { useCameraConfig } from "@/contexts/CameraConfigContext";
 import { useAccessibility } from "@/contexts/AccessibilityContext";
+import { useTranslationConfig } from "@/contexts/TranslationConfigContext";
 import { speakWord as speakTranslation } from "@/services/ttsService";
 import { errorService } from "@/services/errorService";
 import { apiService } from "@/services/apiService";
 import { CapturedFrame } from "@/types/camera";
 
-// How long (ms) with no hand detected before the accumulated text is finalized + cleared
-const NO_HAND_TIMEOUT_MS = 5000;
 
 export default function HomeScreen() {
   const [facing, setFacing] = useState<CameraType>("back");
@@ -47,16 +48,45 @@ export default function HomeScreen() {
   const [serverConnected, setServerConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const accumulatedWord = useRef("");
-  const noHandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noHandTimerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const spokenFadeTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Debounce: require same letter N frames in a row before accepting,
-  // then cooldown before same letter can fire again.
-  const STABILITY_FRAMES  = 3;      // consecutive same-letter frames needed
-  const SAME_LETTER_COOLDOWN_MS = 1200; // ms before same letter accepted again
+  const { noHandTimeoutMs, stabilityFrames, sameLetterCooldownMs } = useTranslationConfig();
+
+  // Refs so handleFrameCapture (stored by cameraConfigService) always sees the latest values
+  const noHandTimeoutMsRef    = useRef(noHandTimeoutMs);
+  const stabilityFramesRef    = useRef(stabilityFrames);
+  const sameLetterCooldownRef = useRef(sameLetterCooldownMs);
+  useEffect(() => { noHandTimeoutMsRef.current    = noHandTimeoutMs;    }, [noHandTimeoutMs]);
+  useEffect(() => { stabilityFramesRef.current    = stabilityFrames;    }, [stabilityFrames]);
+  useEffect(() => { sameLetterCooldownRef.current = sameLetterCooldownMs; }, [sameLetterCooldownMs]);
+
   const pendingLetter   = useRef<string | null>(null);
   const pendingCount    = useRef(0);
+  const missCount       = useRef(0);
   const lastEmittedLetter = useRef<string | null>(null);
   const lastEmittedTime   = useRef(0);
+
+  // ── Translation visual state ─────────────────────────────────────────────────
+  type TranslationState = "idle" | "accumulating" | "spoken";
+  const [translationState, setTranslationState] = useState<TranslationState>("idle");
+  const translationStateRef = useRef<TranslationState>("idle");
+  const setTxState = (s: TranslationState) => {
+    translationStateRef.current = s;
+    setTranslationState(s);
+  };
+
+  const textScale     = useSharedValue(1);
+  const textOpacity   = useSharedValue(1);
+  const cursorOpacity = useSharedValue(0);
+
+  const textAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: textScale.value }],
+    opacity: textOpacity.value,
+  }));
+  const cursorAnimStyle = useAnimatedStyle(() => ({
+    opacity: cursorOpacity.value,
+  }));
 
   const shimmerOpacity = useSharedValue(1);
   const shimmerStyle = useAnimatedStyle(() => ({
@@ -81,8 +111,32 @@ export default function HomeScreen() {
 
   const finalizeWord = (word: string) => {
     setTranslationText(word);
+    setTxState("spoken");
+
+    // Stop cursor blink
+    cancelAnimation(cursorOpacity);
+    cursorOpacity.value = withTiming(0, { duration: 60 });
+
+    // Restore full opacity, then bounce scale
+    textOpacity.value = withTiming(1, { duration: 60 });
+    textScale.value = withSequence(
+      withTiming(1.08, { duration: 130, easing: Easing.out(Easing.ease) }),
+      withTiming(1.0,  { duration: 220, easing: Easing.inOut(Easing.ease) })
+    );
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
     if (ttsEnabled) {
-      speakTranslation(word);
+      speakTranslation(word, () => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // Fade 5s after TTS finishes — cancelled if user signs again or clears
+        if (spokenFadeTimerRef.current) clearTimeout(spokenFadeTimerRef.current);
+        spokenFadeTimerRef.current = setTimeout(() => {
+          textScale.value   = withTiming(0.96, { duration: 500, easing: Easing.inOut(Easing.ease) });
+          textOpacity.value = withTiming(0.65, { duration: 500 });
+          spokenFadeTimerRef.current = null;
+        }, 5000);
+      });
     } else {
       announce(word);
     }
@@ -93,6 +147,15 @@ export default function HomeScreen() {
       clearTimeout(noHandTimerRef.current);
       noHandTimerRef.current = null;
     }
+    if (spokenFadeTimerRef.current) {
+      clearTimeout(spokenFadeTimerRef.current);
+      spokenFadeTimerRef.current = null;
+    }
+    cancelAnimation(cursorOpacity);
+    cursorOpacity.value = withTiming(0, { duration: 60 });
+    textScale.value   = withTiming(1, { duration: 200 });
+    textOpacity.value = withTiming(1, { duration: 200 });
+    setTxState("idle");
     accumulatedWord.current = "";
     setTranslationText("");
   };
@@ -106,7 +169,41 @@ export default function HomeScreen() {
         finalizeWord(accumulatedWord.current);
         accumulatedWord.current = "";
       }
+    } else if (letter === "DEL") {
+      // In "spoken" state the word is finalized — DEL clears it entirely
+      if (translationStateRef.current === "spoken") {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        clearAccumulator();
+      } else if (accumulatedWord.current.length > 0) {
+        accumulatedWord.current = accumulatedWord.current.slice(0, -1);
+        setTranslationText(accumulatedWord.current);
+        if (accumulatedWord.current.length === 0) {
+          cancelAnimation(cursorOpacity);
+          cursorOpacity.value = withTiming(0, { duration: 60 });
+          setTxState("idle");
+        }
+      }
     } else {
+      // Regular letter — transition to accumulating if not already there
+      if (translationStateRef.current !== "accumulating") {
+        setTxState("accumulating");
+        // Cancel pending fade from "spoken" state
+        if (spokenFadeTimerRef.current) {
+          clearTimeout(spokenFadeTimerRef.current);
+          spokenFadeTimerRef.current = null;
+        }
+        // Restore from any dim/shrink left over from "spoken"
+        textOpacity.value = withTiming(1, { duration: 150 });
+        textScale.value   = withTiming(1, { duration: 150 });
+        // Start cursor blink (start at 1, fade to 0, reverse = smooth on/off)
+        cancelAnimation(cursorOpacity);
+        cursorOpacity.value = 1;
+        cursorOpacity.value = withRepeat(
+          withTiming(0, { duration: 400 }),
+          -1,
+          true
+        );
+      }
       accumulatedWord.current += letter;
       setTranslationText(accumulatedWord.current);
     }
@@ -116,23 +213,33 @@ export default function HomeScreen() {
     const letter = await apiService.predictFrame(frame);
 
     if (!letter) {
-      // Reset stability buffer — hand gone
-      pendingLetter.current = null;
-      pendingCount.current  = 0;
+      // Allow 1 null frame through before resetting streak (intermittent misses on mobile)
+      missCount.current += 1;
+      if (missCount.current > 1) {
+        pendingLetter.current = null;
+        pendingCount.current  = 0;
+      }
 
       if (!noHandTimerRef.current && accumulatedWord.current.length > 0) {
-        noHandTimerRef.current = setTimeout(() => {
+        noHandTimerRef.current = setTimeout(async () => {
           if (accumulatedWord.current.length > 0) {
-            finalizeWord(accumulatedWord.current);
+            const raw = accumulatedWord.current;
             accumulatedWord.current = "";
+            let text = raw;
+            if (raw.length >= 4) {
+              const segmented = await apiService.segmentText(raw);
+              if (segmented) text = segmented;
+            }
+            finalizeWord(text);
           }
           noHandTimerRef.current = null;
-        }, NO_HAND_TIMEOUT_MS);
+        }, noHandTimeoutMsRef.current);
       }
       return;
     }
 
     // Hand is back — cancel finalize timer
+    missCount.current = 0;
     if (noHandTimerRef.current) {
       clearTimeout(noHandTimerRef.current);
       noHandTimerRef.current = null;
@@ -146,13 +253,13 @@ export default function HomeScreen() {
       pendingCount.current  = 1;
     }
 
-    if (pendingCount.current < STABILITY_FRAMES) return;
+    if (pendingCount.current < stabilityFramesRef.current) return;
 
     // Same-letter cooldown: prevent double-firing same letter
     const now = Date.now();
     if (
       letter === lastEmittedLetter.current &&
-      now - lastEmittedTime.current < SAME_LETTER_COOLDOWN_MS
+      now - lastEmittedTime.current < sameLetterCooldownRef.current
     ) return;
 
     // Stable new letter — emit it and reset
@@ -170,8 +277,21 @@ export default function HomeScreen() {
       clearAccumulator();
       pendingLetter.current     = null;
       pendingCount.current      = 0;
+      missCount.current         = 0;
       lastEmittedLetter.current = null;
       lastEmittedTime.current   = 0;
+      // Cancel any pending spoken fade
+      if (spokenFadeTimerRef.current) {
+        clearTimeout(spokenFadeTimerRef.current);
+        spokenFadeTimerRef.current = null;
+      }
+      // Snap animations to resting state immediately on stop
+      cancelAnimation(cursorOpacity);
+      cancelAnimation(textScale);
+      cancelAnimation(textOpacity);
+      cursorOpacity.value = 0;
+      textScale.value     = 1;
+      textOpacity.value   = 1;
       announce("Translation stopped");
     } else {
       if (!cameraRef.current) {
@@ -343,25 +463,18 @@ export default function HomeScreen() {
           ]}
           elevation={elevation.level2}
         >
-          {/* Status row */}
+          {/* Status row — always rendered so height never changes */}
           <View style={overlayStyle.statusRow}>
-            <Text
-              variant="titleMedium"
-              style={[overlayStyle.statusText, { color: theme.colors.onPrimaryContainer, fontSize: Math.round(16 * fontScale) }]}
+            <Chip
+              mode="flat"
+              compact
+              icon={serverConnected ? "check-circle" : "alert-circle"}
+              style={{ opacity: isTranslating ? 1 : 0 }}
+              accessibilityLabel={serverConnected ? "Server connected" : "Server offline"}
+              accessibilityElementsHidden={!isTranslating}
             >
-              ASL Translation {isTranslating ? "Active" : "Ready"}
-            </Text>
-
-            {isTranslating && (
-              <Chip
-                mode="flat"
-                compact
-                icon={serverConnected ? "check-circle" : "alert-circle"}
-                accessibilityLabel={serverConnected ? "Server connected" : "Server offline"}
-              >
-                {serverConnected ? "Connected" : "Offline"}
-              </Chip>
-            )}
+              {serverConnected ? "Connected" : "Offline"}
+            </Chip>
           </View>
 
           {/* Translation output */}
@@ -377,20 +490,35 @@ export default function HomeScreen() {
                 </Text>
               </Animated.View>
             ) : (
-              <Text
-                variant="headlineLarge"
-                style={[
-                  overlayStyle.translationOutput,
-                  { color: theme.colors.onPrimaryContainer, fontSize: Math.round(36 * fontScale) },
-                ]}
-                numberOfLines={2}
-                adjustsFontSizeToFit
-                accessibilityLabel={
-                  translationText ? `Translated text: ${translationText}` : ""
-                }
-              >
-                {translationText}
-              </Text>
+              <Animated.View style={[overlayStyle.textAnimContainer, textAnimStyle]}>
+                <View style={overlayStyle.textRow}>
+                  <Text
+                    variant="headlineLarge"
+                    style={[
+                      overlayStyle.translationOutput,
+                      { color: theme.colors.onPrimaryContainer, fontSize: Math.round(36 * fontScale) },
+                    ]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    accessibilityLabel={translationText ? `Translated text: ${translationText}` : ""}
+                  >
+                    {translationText}
+                  </Text>
+                  {translationState === "accumulating" && (
+                    <Animated.Text
+                      style={[
+                        overlayStyle.cursorText,
+                        { color: theme.colors.onPrimaryContainer, fontSize: Math.round(36 * fontScale) },
+                        cursorAnimStyle,
+                      ]}
+                      accessibilityElementsHidden
+                      importantForAccessibility="no"
+                    >
+                      |
+                    </Animated.Text>
+                  )}
+                </View>
+              </Animated.View>
             )}
 
             {translationText.length > 0 && (
@@ -489,12 +617,9 @@ const overlayStyle = StyleSheet.create({
   },
   statusRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     alignItems: "center",
     marginBottom: spacing.sm,
-  },
-  statusText: {
-    fontWeight: "bold",
   },
   outputRow: {
     flexDirection: "row",
@@ -503,10 +628,23 @@ const overlayStyle = StyleSheet.create({
     minHeight: 60,
     marginBottom: spacing.md,
   },
-  translationOutput: {
+  textAnimContainer: {
     flex: 1,
-    textAlign: "center",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  textRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    flexShrink: 1,
+  },
+  translationOutput: {
     fontWeight: "bold",
+    flexShrink: 1,
+  },
+  cursorText: {
+    fontWeight: "bold",
+    marginLeft: 2,
   },
   waitingContainer: {
     flex: 1,

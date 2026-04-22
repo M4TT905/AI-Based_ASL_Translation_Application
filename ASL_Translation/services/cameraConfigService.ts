@@ -100,7 +100,7 @@ class CameraConfigService {
       const photo = await this.cameraRef.current.takePictureAsync({
         quality: resolutionSettings.quality,
         base64: false,
-        skipProcessing: true,
+        skipProcessing: false,
       });
 
       if (!photo) {
@@ -263,7 +263,9 @@ class CameraConfigService {
    * Capture a single frame
    */
   private async captureFrame(): Promise<void> {
-    if (!this.cameraRef || !this.cameraRef.current || !this.frameCallback) {
+    // Snapshot callback — stopCapture() may null it while this async fn is in flight
+    const callback = this.frameCallback;
+    if (!this.cameraRef || !this.cameraRef.current || !callback) {
       return;
     }
 
@@ -272,11 +274,12 @@ class CameraConfigService {
     try {
       const resolutionSettings = RESOLUTION_SETTINGS[this.config.resolution];
 
-      // Capture frame from camera
+      // skipProcessing: true keeps capture fast (~50ms vs ~400ms).
+      // EXIF rotation is handled server-side via ImageOps.exif_transpose.
       const photo = await this.cameraRef.current.takePictureAsync({
         quality: resolutionSettings.quality,
-        base64: false, // Set to true if you need base64
-        skipProcessing: true, // Faster capture
+        base64: false,
+        skipProcessing: true,
       });
 
       if (!photo) {
@@ -318,9 +321,16 @@ class CameraConfigService {
       // Add to buffer
       this.addToBuffer(capturedFrame);
 
-      // Call the callback
-      await this.frameCallback(capturedFrame);
+      // Re-check: stopCapture() may have fired while takePictureAsync was awaited
+      if (!this.frameCallback) return;
+
+      await callback(capturedFrame);
     } catch (error) {
+      const msg = error instanceof Error ? error.message.toLowerCase() : "";
+      // Camera flip / unmount mid-capture — expected, not an error worth surfacing
+      if (msg.includes("unmount") || msg.includes("camera") || msg.includes("taking photo")) {
+        return;
+      }
       console.error("Error capturing frame:", error);
     }
   }

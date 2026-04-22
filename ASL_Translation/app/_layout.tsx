@@ -18,6 +18,7 @@ import {
   useAccessibility,
   FontSize,
 } from "@/contexts/AccessibilityContext";
+import { TranslationConfigProvider } from "@/contexts/TranslationConfigContext";
 
 export const unstable_settings = {
   anchor: "(tabs)",
@@ -75,9 +76,11 @@ function ThemedApp() {
 export default function RootLayout() {
   return (
     <AccessibilityProvider>
-      <CameraConfigProvider>
-        <ThemedApp />
-      </CameraConfigProvider>
+      <TranslationConfigProvider>
+        <CameraConfigProvider>
+          <ThemedApp />
+        </CameraConfigProvider>
+      </TranslationConfigProvider>
     </AccessibilityProvider>
   );
 }

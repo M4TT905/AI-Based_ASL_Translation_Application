@@ -7,9 +7,9 @@
  *   - ngrok:     "https://xxxx.ngrok-free.app"
  */
 
-// Backend host swap this when using a live server address
-export const API_BASE_URL = "http://localhost:8000";
-//export const API_BASE_URL = "https://damaris-oily-unflinchingly.ngrok-free.dev";
+// Backend host: set EXPO_PUBLIC_API_BASE_URL in .env to override (ngrok URL)
+export const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 // Endpoint to call for a single-frame prediction.
 export const PREDICT_ENDPOINT = "/translate/";
@@ -20,13 +20,16 @@ export const RESPONSE_KEY = "translation" as const;
 // Health-check endpoint, used by apiService to confirm the server is up.
 export const HEALTH_ENDPOINT = "/health";
 
+// Endpoint for word segmentation (e.g. "HELLOWORLD" → "HELLO WORLD").
+export const SEGMENT_ENDPOINT = "/segment";
+
 // Request timeout in milliseconds.
 // 5 s is generous for a local server
 export const API_TIMEOUT_MS = 5000;
 
 // Minimum confidence score to accept a prediction (0–1).
 // Frames below this threshold are silently dropped.
-export const CONFIDENCE_THRESHOLD = 0.70;
+export const CONFIDENCE_THRESHOLD = 0.60;
 
 // JSON key that holds the confidence score in the response.
 export const CONFIDENCE_KEY = "confidence" as const;

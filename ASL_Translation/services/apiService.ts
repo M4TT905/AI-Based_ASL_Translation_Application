@@ -13,7 +13,7 @@
  * UI behaves as if the server is up.
  */
 
-import { API_BASE_URL, HEALTH_ENDPOINT, API_TIMEOUT_MS, USE_MOCK_API } from "@/config/api";
+import { API_BASE_URL, HEALTH_ENDPOINT, SEGMENT_ENDPOINT, API_TIMEOUT_MS, USE_MOCK_API } from "@/config/api";
 import { CapturedFrame } from "@/types/camera";
 import { sendFrameToAPI } from "@/services/imageProcessor";
 
@@ -62,6 +62,30 @@ class ApiService {
    */
   async predictFrame(frame: CapturedFrame): Promise<string | null> {
     return sendFrameToAPI(frame);
+  }
+
+  /**
+   * Send accumulated text to /segment and return the spaced result.
+   * Returns null on any failure — caller should fall back to the raw string.
+   */
+  async segmentText(text: string): Promise<string | null> {
+    if (USE_MOCK_API) return text;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}${SEGMENT_ENDPOINT}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify({ text }),
+      });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.result ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /** Call when translation is stopped, resets connection state. */

@@ -41,7 +41,7 @@ export const RESOLUTION_SETTINGS: Record<CameraResolution, ResolutionSettings> =
   [CameraResolution.SD_480P]: {
     width: 640,
     height: 480,
-    quality: 0.8,
+    quality: 0.7,
     label: "480p (SD)",
   },
 };
@@ -88,8 +88,8 @@ export interface CameraConfig {
  * Default camera configuration
  */
 export const DEFAULT_CAMERA_CONFIG: CameraConfig = {
-  resolution: CameraResolution.HD_720P,
-  captureInterval: 500,
+  resolution: CameraResolution.SD_480P,
+  captureInterval: 200,
   isPaused: false,
   isCapturing: false,
   captureMode: CaptureMode.CONTINUOUS,

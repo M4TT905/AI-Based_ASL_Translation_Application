@@ -15,6 +15,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { spacing, borderRadius, elevation } from "@/constants/paperTheme";
 import { useCameraConfig } from "@/contexts/CameraConfigContext";
 import { useAccessibility } from "@/contexts/AccessibilityContext";
+import {
+  useTranslationConfig,
+  NO_HAND_TIMEOUT_OPTIONS,
+  STABILITY_FRAMES_OPTIONS,
+  COOLDOWN_MS_OPTIONS,
+} from "@/contexts/TranslationConfigContext";
 import { cameraConfigService } from "@/services/cameraConfigService";
 import {
   CameraResolution,
@@ -47,6 +53,23 @@ export default function OptionsScreen() {
     setFontSize,
     announce,
   } = useAccessibility();
+
+  const {
+    noHandTimeoutMs,
+    stabilityFrames,
+    sameLetterCooldownMs,
+    cycleNoHandTimeout,
+    cycleStabilityFrames,
+    cycleSameLetterCooldown,
+    resetTranslationConfig,
+  } = useTranslationConfig();
+
+  const noHandOpt    = NO_HAND_TIMEOUT_OPTIONS.find(o => o.value === noHandTimeoutMs)
+                    ?? NO_HAND_TIMEOUT_OPTIONS[1];
+  const stabilityOpt = STABILITY_FRAMES_OPTIONS.find(o => o.value === stabilityFrames)
+                    ?? STABILITY_FRAMES_OPTIONS[1];
+  const cooldownOpt  = COOLDOWN_MS_OPTIONS.find(o => o.value === sameLetterCooldownMs)
+                    ?? COOLDOWN_MS_OPTIONS[1];
 
   const handleResolutionChange = async () => {
     const resolutions = [
@@ -123,6 +146,7 @@ export default function OptionsScreen() {
           style: "destructive",
           onPress: async () => {
             await resetConfig();
+            await resetTranslationConfig();
             setNotifications(true);
             Alert.alert(
               "Settings Reset",
@@ -254,6 +278,82 @@ export default function OptionsScreen() {
             >
               View Configuration
             </Button>
+          </Card.Content>
+        </Card>
+
+        {/* Detection Tuning */}
+        <Card
+          style={[
+            styles.section,
+            { marginHorizontal: spacing.md, marginTop: spacing.md },
+          ]}
+          elevation={elevation.level2}
+        >
+          <Card.Content>
+            <Text
+              variant="titleMedium"
+              style={[styles.sectionTitle, { color: theme.colors.onSurface, marginBottom: spacing.xs }]}
+            >
+              Detection Tuning
+            </Text>
+            <Text
+              variant="bodySmall"
+              style={{ color: theme.colors.onSurfaceVariant, marginBottom: spacing.md }}
+            >
+              Controls how letters are detected and confirmed. Changes take effect immediately.
+            </Text>
+
+            <List.Item
+              title="Word Finalize Delay"
+              description={`After hand leaves frame, wait this long before speaking — ${noHandOpt.description}`}
+              right={() => (
+                <Button
+                  mode="outlined"
+                  onPress={cycleNoHandTimeout}
+                  style={{ borderRadius: borderRadius.md, minWidth: 64 }}
+                  accessibilityLabel={`Word finalize delay: ${noHandOpt.label}. Tap to cycle`}
+                >
+                  {noHandOpt.label}
+                </Button>
+              )}
+              style={styles.listItem}
+            />
+
+            <Divider style={{ marginVertical: spacing.sm }} />
+
+            <List.Item
+              title="Letter Stability"
+              description={`Consecutive matching frames needed before a letter fires — ${stabilityOpt.description}`}
+              right={() => (
+                <Button
+                  mode="outlined"
+                  onPress={cycleStabilityFrames}
+                  style={{ borderRadius: borderRadius.md, minWidth: 64 }}
+                  accessibilityLabel={`Letter stability: ${stabilityOpt.label}. Tap to cycle`}
+                >
+                  {stabilityOpt.label}
+                </Button>
+              )}
+              style={styles.listItem}
+            />
+
+            <Divider style={{ marginVertical: spacing.sm }} />
+
+            <List.Item
+              title="Repeat Cooldown"
+              description={`Minimum gap before the same letter can fire again — ${cooldownOpt.description}`}
+              right={() => (
+                <Button
+                  mode="outlined"
+                  onPress={cycleSameLetterCooldown}
+                  style={{ borderRadius: borderRadius.md, minWidth: 64 }}
+                  accessibilityLabel={`Repeat cooldown: ${cooldownOpt.label}. Tap to cycle`}
+                >
+                  {cooldownOpt.label}
+                </Button>
+              )}
+              style={styles.listItem}
+            />
           </Card.Content>
         </Card>
 
