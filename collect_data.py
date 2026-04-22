@@ -32,7 +32,7 @@ import time
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-CLASSES = list('ABCDEFGHIJKLMNOPQRSTUVWXYZ') + [str(i) for i in range(10)]
+CLASSES = list('ABCDEFGHIJKLMNOPQRSTUVWXYZ') + [str(i) for i in range(10)] + ['DEL']
 
 VARIATIONS = [
     ("NEUTRAL",       "Hold sign centered and steady"),

@@ -7,10 +7,13 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 import io, os, pickle
 import mediapipe as mp
+import wordsegment
+wordsegment.load()
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -100,17 +103,27 @@ def normalize_keypoints_enhanced(results):
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'], allow_headers=['*'])
 
-CONFIDENCE_THRESHOLD = 0.70
+CONFIDENCE_THRESHOLD = 0.60
 
 @app.get('/health')
 async def health():
     return {'status': 'ok'}
 
+class SegmentRequest(BaseModel):
+    text: str
+
+@app.post('/segment')
+async def segment_text(req: SegmentRequest):
+    words = wordsegment.segment(req.text.lower())
+    return JSONResponse({'result': ' '.join(w.upper() for w in words)})
+
 @app.post('/translate/')
 async def translate_image(file: UploadFile = File(...)):
     try:
         img_bytes = await file.read()
-        pil_img   = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+        pil_img   = Image.open(io.BytesIO(img_bytes))
+        pil_img   = ImageOps.exif_transpose(pil_img)   # fix mobile rotation
+        pil_img   = pil_img.convert('RGB')
         img_np    = np.array(pil_img)
 
         mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_np)
