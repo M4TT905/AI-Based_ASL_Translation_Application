@@ -1,171 +1,142 @@
-# server.py
+# server.py — ASL SVM backend (single-frame, no buffer)
 #
-# For ngrok (demo day): run ngrok in a separate terminal after starting the server:
+# Demo day: run ngrok in a separate terminal after starting:
 #   ngrok http 8000
 # Then update API_BASE_URL in ASL_Translation/config/api.ts with the ngrok URL.
 
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from tensorflow.keras.models import load_model
 import numpy as np
 from PIL import Image
-import io
-import os
+import io, os, pickle
 import mediapipe as mp
-from collections import deque
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-model = load_model(os.path.join(_HERE, "..", "ASL_MediaPipe_Refined", "refined_checkpoint_for_new_keypoint_collection.keras"))
 
-keypoints_buffer = deque(maxlen=30)
+# ── Load SVM model ────────────────────────────────────────────────────────────
 
-app = FastAPI()
+with open(os.path.join(_HERE, '..', 'model', 'asl_svm.pkl'), 'rb') as f:
+    clf = pickle.load(f)
+classes = np.load(os.path.join(_HERE, '..', 'model', 'classes.npy'))
+print(f'Loaded SVM — {len(classes)} classes: {list(classes)}')
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# ── MediaPipe ─────────────────────────────────────────────────────────────────
 
-# --- MediaPipe HandLandmarker (Tasks API, works on mediapipe 0.10.x) ---
-BaseOptions          = mp.tasks.BaseOptions
-HandLandmarker       = mp.tasks.vision.HandLandmarker
+BaseOptions           = mp.tasks.BaseOptions
+HandLandmarker        = mp.tasks.vision.HandLandmarker
 HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
-VisionRunningMode    = mp.tasks.vision.RunningMode
+VisionRunningMode     = mp.tasks.vision.RunningMode
 
 options = HandLandmarkerOptions(
-    base_options=BaseOptions(model_asset_path=os.path.join(_HERE, "hand_landmarker.task")),
+    base_options=BaseOptions(model_asset_path=os.path.join(_HERE, 'hand_landmarker.task')),
     running_mode=VisionRunningMode.IMAGE,
-    num_hands=2
+    num_hands=2,
 )
 landmarker = HandLandmarker.create_from_options(options)
 
-# --- Adapter: wrap Tasks API landmarks so normalize_keypoints_enhanced can read them ---
+# ── Adapters ──────────────────────────────────────────────────────────────────
+
 class _LandmarkList:
-    """Wraps a list of NormalizedLandmark into an object with a .landmark attribute."""
-    def __init__(self, landmarks):
-        self.landmark = landmarks
+    def __init__(self, lms): self.landmark = lms
 
 class _HolisticResult:
-    """Mimics the mp.solutions.holistic result shape expected by normalize_keypoints_enhanced."""
-    def __init__(self, left_hand=None, right_hand=None):
-        self.left_hand_landmarks  = left_hand   # _LandmarkList or None
-        self.right_hand_landmarks = right_hand  # _LandmarkList or None
-        self.pose_landmarks       = None        # no pose — falls back to scale=1, center=[0,0,0]
+    def __init__(self, left=None, right=None):
+        self.left_hand_landmarks  = left
+        self.right_hand_landmarks = right
+        self.pose_landmarks       = None
 
 def _make_holistic_result(result):
-    """Separate HandLandmarker output into left/right using handedness classifications."""
     left = right = None
-    for hand_lms, handedness in zip(result.hand_landmarks, result.handedness):
-        label = handedness[0].category_name  # "Left" or "Right"
-        wrapped = _LandmarkList(hand_lms)
-        if label == "Left":
-            left = wrapped
-        else:
-            right = wrapped
-    return _HolisticResult(left_hand=left, right_hand=right)
+    for lms, handedness in zip(result.hand_landmarks, result.handedness):
+        if handedness[0].category_name == 'Left': left  = _LandmarkList(lms)
+        else:                                      right = _LandmarkList(lms)
+    return _HolisticResult(left, right)
 
-# --- 166-feature extraction (mirrors Hachi's normalize_keypoints_enhanced) ---
+# ── Feature extraction (identical to collect_data.py / train.py) ──────────────
+
 def normalize_keypoints_enhanced(results):
     features = []
+    if results.pose_landmarks:
+        pose = np.array([[lm.x, lm.y, lm.z, lm.visibility]
+                         for lm in results.pose_landmarks.landmark])
+        ls, rs = pose[11][:3], pose[12][:3]
+        lh, rh = pose[23][:3], pose[24][:3]
+        sc     = (ls + rs) / 2
+        sw     = np.linalg.norm(ls - rs)
+        th     = np.linalg.norm(sc - (lh + rh) / 2)
+        sf     = sw if sw > 0 else (th if th > 0 else 1.0)
+        bd     = rs - ls; bd /= np.linalg.norm(bd) + 1e-6
+        features.extend(bd[:2])
+    else:
+        sf = 1.0; sc = np.zeros(3); features.extend([0.0, 0.0])
 
-    # Pose normalization — no pose available, use defaults
-    scale_factor    = 1.0
-    shoulder_center = np.array([0.0, 0.0, 0.0])
-    features.extend([0.0, 0.0])  # body direction placeholder
+    def process_hand(hand_lms):
+        if not hand_lms:
+            return [0.0] * (21*3 + 5*2 + 3 + 6)
+        hand = np.array([[lm.x, lm.y, lm.z] for lm in hand_lms.landmark])
+        hn   = (hand - (sc if results.pose_landmarks else hand[0])) / (sf + 1e-6)
+        feats = list(hn.flatten())
+        def angle(b, t):
+            if len(hand) > t:
+                v = hn[t] - hn[b]; a = np.arctan2(v[1], v[0])
+                feats.extend([np.sin(a), np.cos(a)])
+        angle(5,8); angle(9,12); angle(13,16); angle(17,20); angle(1,4)
+        for a, b in [(8,12),(12,16),(16,20)]:
+            if len(hand) > b: feats.append(np.linalg.norm(hn[a] - hn[b]))
+        if len(hand) > 20:
+            pc    = np.mean(hn[0:5], axis=0)
+            tips  = hn[[4,8,12,16,20]]
+            dists = [np.linalg.norm(t - pc) for t in tips]
+            feats.extend(dists); feats.append(np.mean(dists))
+        return feats
 
-    for hand_landmarks in [results.left_hand_landmarks, results.right_hand_landmarks]:
-        if hand_landmarks:
-            hand = np.array([[lm.x, lm.y, lm.z] for lm in hand_landmarks.landmark])
-            hand_normalized = (hand - shoulder_center) / (scale_factor + 1e-6)
-            features.extend(hand_normalized.flatten())
-
-            # Finger angles (sin + cos) for all 5 fingers
-            finger_pairs = [(5, 8), (9, 12), (13, 16), (17, 20), (1, 4)]
-            for base_idx, tip_idx in finger_pairs:
-                if len(hand) > tip_idx:
-                    vec   = hand_normalized[tip_idx] - hand_normalized[base_idx]
-                    angle = np.arctan2(vec[1], vec[0])
-                    features.extend([np.sin(angle), np.cos(angle)])
-
-            # Inter-fingertip distances
-            tip_indices = [8, 12, 16, 20]
-            for i in range(len(tip_indices) - 1):
-                if len(hand) > tip_indices[i + 1]:
-                    features.append(np.linalg.norm(
-                        hand_normalized[tip_indices[i]] - hand_normalized[tip_indices[i + 1]]))
-
-            # Hand openness: tip distances to palm center + mean spread
-            if len(hand) > 20:
-                palm_center = np.mean(hand_normalized[0:5], axis=0)
-                all_tips    = hand_normalized[[4, 8, 12, 16, 20]]
-                dists       = [np.linalg.norm(t - palm_center) for t in all_tips]
-                features.extend(dists)
-                features.append(np.mean(dists))
-        else:
-            features.extend(np.zeros(21 * 3))  # positions
-            features.extend(np.zeros(5 * 2))   # finger angles
-            features.extend(np.zeros(3))        # inter-finger distances
-            features.extend(np.zeros(6))        # tip distances + mean spread
-
+    features.extend(process_hand(results.left_hand_landmarks))
+    features.extend(process_hand(results.right_hand_landmarks))
     return np.array(features)
 
-classes = [
-    "hello", "thanks", "iloveyou",
-    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
-    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
-    "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T",
-    "U", "V", "W", "X", "Y", "Z"
-]
+# ── FastAPI ───────────────────────────────────────────────────────────────────
 
-@app.get("/health")
+app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'], allow_headers=['*'])
+
+CONFIDENCE_THRESHOLD = 0.70
+
+@app.get('/health')
 async def health():
-    return {"status": "ok"}
+    return {'status': 'ok'}
 
-@app.post("/translate/")
+@app.post('/translate/')
 async def translate_image(file: UploadFile = File(...)):
     try:
-        image_bytes = await file.read()
-        pil_img     = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        img_np      = np.array(pil_img)
+        img_bytes = await file.read()
+        pil_img   = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+        img_np    = np.array(pil_img)
 
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_np)
-        raw      = landmarker.detect(mp_image)
+        mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_np)
+        raw    = landmarker.detect(mp_img)
 
         if not raw.hand_landmarks:
-            keypoints_buffer.clear()
-            return JSONResponse({"translation": None, "confidence": 0.0, "buffer_frames": 0})
+            return JSONResponse({'translation': None, 'confidence': 0.0})
 
-        result    = _make_holistic_result(raw)
-        keypoints = normalize_keypoints_enhanced(result)
+        feats = normalize_keypoints_enhanced(_make_holistic_result(raw))
+        if len(feats) != 166:
+            return JSONResponse({'translation': None, 'confidence': 0.0})
 
-        keypoints_buffer.append(keypoints)
-        n = len(keypoints_buffer)
+        proba      = clf.predict_proba([feats])[0]
+        pred_idx   = int(np.argmax(proba))
+        confidence = float(proba[pred_idx])
 
-        if n == 30:
-            sequence = np.array(keypoints_buffer)   # (30, 166)
-            sequence = np.expand_dims(sequence, 0)  # (1, 30, 166)
-        else:
-            kp       = np.expand_dims(keypoints, 0)
-            kp       = np.expand_dims(kp, 1)
-            sequence = np.repeat(kp, 30, axis=1)    # (1, 30, 166)
+        if confidence < CONFIDENCE_THRESHOLD:
+            return JSONResponse({'translation': None, 'confidence': 0.0})
 
-        prediction = model.predict(sequence, verbose=0)
-        pred_class = int(np.argmax(prediction, axis=1)[0])
-        confidence = float(np.max(prediction))
-
-        if pred_class >= len(classes):
-            return JSONResponse({"translation": None, "confidence": 0.0})
-
-        translated = classes[pred_class]
-        print(translated, confidence, f"({n}/30 frames)")
-        return JSONResponse({"translation": translated, "confidence": confidence, "buffer_frames": n})
+        label = str(classes[pred_idx])
+        print(f'  {label} ({confidence*100:.1f}%)')
+        return JSONResponse({'translation': label, 'confidence': confidence})
 
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({'error': str(e)}, status_code=500)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host='0.0.0.0', port=8000)
