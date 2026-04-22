@@ -48,4 +48,4 @@ __pycache__/
 *.pyo
 .env
 venv/
-.venv/
+prediction_log.json
