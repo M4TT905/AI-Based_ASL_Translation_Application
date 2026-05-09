@@ -6,7 +6,7 @@ A real-time mobile app that translates American Sign Language hand signs into te
 
 ## Demo
 
-![Demo](demo.gif)
+<video src="demo.mp4" controls width="400"></video>
 
 ---
 
