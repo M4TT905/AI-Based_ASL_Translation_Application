@@ -1,26 +1,53 @@
 # AI-Based ASL Translation Application
 
-Real-time American Sign Language translation using MediaPipe hand landmark detection and a Keras LSTM model. React Native (Expo) frontend + FastAPI backend.
+A real-time mobile app that translates American Sign Language hand signs into text, achieving 97.7% test accuracy across 37 sign classes.
 
 ---
 
-## Repo Structure
+## Demo
 
-```
-AI-Based_ASL_Translation_Application/
-├── ASL_Translation/          # React Native (Expo) frontend app
-├── ASL_Backend_Server/       # FastAPI backend server (NEW_integration_test branch)
-└── ASL_MediaPipe_Refined/    # Keras model + training notebooks
-```
-
-> **Note:** The backend server lives on the `NEW_integration_test` branch. Use a git worktree to run it alongside the app branch:
-> ```
-> git worktree add ../ASL-Backend NEW_integration_test
-> ```
+![Demo](demo.gif)
 
 ---
 
-## Frontend Setup
+## Why We Built It
+
+Millions of people use American Sign Language as their primary language, yet real-time translation tools accessible on everyday devices are rare. We built this app to lower the communication barrier between ASL users and non-signers, using only a smartphone camera, no specialized hardware required. The result is a lightweight, low-latency pipeline that runs inference on live video frames and surfaces predictions instantly on-screen.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Mobile Frontend | React Native (Expo) |
+| Backend API | FastAPI (Python) |
+| Hand Tracking | MediaPipe Hand Landmarker |
+| ML Model | SVM (scikit-learn) |
+| Language | Python 3, TypeScript |
+
+---
+
+## How It Works
+
+1. The mobile app streams camera frames to the FastAPI backend over HTTP.
+2. MediaPipe Hand Landmarker extracts 21 3D landmarks per hand. Per-hand features (x/y/z coords, finger direction angles, inter-fingertip distances) are combined with body orientation into a 166-value feature vector per frame.
+3. An SVM classifier (RBF kernel, C=10) scores the vector against 37 classes: A-Z, digits 0-9, and DEL.
+4. Predictions that clear the confidence threshold are returned to the app and rendered as text in real time.
+
+---
+
+## Model Performance
+
+**97.7% test accuracy** across 3,234 samples. Macro-averaged precision, recall, and F1 are all 0.98.
+
+The classifier is an SVM with an RBF kernel (C=10, gamma='scale'), preceded by z-score normalization via StandardScaler. It operates on 166 engineered features per frame, shoulder orientation for body context, plus per-hand landmark coordinates, finger direction angles, and inter-fingertip distances, and classifies across 37 signs (A-Z, 0-9, DEL).
+
+---
+
+## Setup
+
+### Frontend
 
 ```bash
 cd ASL_Translation
@@ -31,12 +58,10 @@ npx expo start
 Scan the QR code with Expo Go (iOS/Android) or press `w` for web.
 
 **API config:** `ASL_Translation/config/api.ts`
-- `API_BASE_URL`, set to server address (localhost for dev, ngrok URL for demo)
-- `USE_MOCK_API`, set to `true` to test the UI loop without a running server
+- `API_BASE_URL`, set to your server address (localhost for local dev, ngrok URL for device testing)
+- `USE_MOCK_API`, set to `true` to run the UI without a live server
 
----
-
-## Backend Setup
+### Backend
 
 ```bash
 cd ASL_Backend_Server
@@ -44,32 +69,29 @@ pip install -r requirements.txt
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
-**IMPORTANT:** Run from inside `ASL_Backend_Server/`, not the repo root. The model and `hand_landmarker.task` are loaded with paths relative to this directory.
+Run from inside `ASL_Backend_Server/`, not the repo root. The model weights and `hand_landmarker.task` are resolved relative to that directory.
 
-### Endpoints
+> **Branch note:** The backend lives on the `NEW_integration_test` branch. To check it out alongside the frontend branch without losing your working tree, use a git worktree:
+> ```bash
+> git worktree add ../ASL-Backend NEW_integration_test
+> ```
+> Then run the server from `../ASL-Backend/ASL_Backend_Server/`.
+
+#### Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/health` | Returns `{"status": "ok"}`, use to verify server is up |
-| POST | `/translate/` | Accepts multipart image, returns `{"translation": "letter", "confidence": 0.0–1.0}` |
+| GET | `/health` | Returns `{"status": "ok"}`, verify the server is reachable |
+| POST | `/translate/` | Accepts a multipart image; returns `{"translation": "letter", "confidence": 0.0-1.0}` |
 
 Returns `{"translation": null, "confidence": 0.0}` when no hand is detected.
 
 ---
 
-## Model Notes
 
-**Active model (demo):** `ASL_MediaPipe_Refined/refined_checkpoint_for_new_keypoint_collection.keras`
-- Feb 12 version, 126 input features (21 landmarks × 2 hands × 3 coords)
-- Loaded by `server.py` at the relative path above
-- Classes: `0–9`, `hello`, `i_love_you`, `thanks`
+## Contributors
 
-**Hachi's Mar 23 model (NOT in use):** Same filename on `refined_MPH_model` branch
-- Expects **166 input features**, incompatible with current `server.py` (which pads to 126)
-- Do not swap in without updating `get_flattened_keypoints()` and the padding constant in `server.py`
-
----
-
-## Demo Day
-
-See `DEMO_CHECKLIST.md`.
+- [Victor S](https://github.com/amiothenes)
+- [Matthew H](https://github.com/M4TT905)
+- [Olamide T](https://github.com/olamidetim21)
+- [Hachi N](https://github.com/hachy-kc)
